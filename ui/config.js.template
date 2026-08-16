@@ -1,0 +1,2 @@
+// Generated at container start from API_BASE_URL. Do not edit.
+window.__HOOKFAN_CONFIG__ = { apiBaseUrl: "${API_BASE_URL}" };

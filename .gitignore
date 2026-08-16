@@ -1,0 +1,17 @@
+# Secrets
+.env
+
+# Build output
+/hookfan
+/dist/
+
+# Node
+node_modules/
+ui/dist/
+ui/*.tsbuildinfo
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/

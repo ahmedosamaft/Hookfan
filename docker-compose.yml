@@ -1,0 +1,59 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hookfan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hookfan}
+      POSTGRES_DB: ${POSTGRES_DB:-hookfan}
+    volumes:
+      - hookfan-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hookfan} -d ${POSTGRES_DB:-hookfan}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Inside the compose network the database is reachable by service name.
+      DATABASE_URL: postgres://${POSTGRES_USER:-hookfan}:${POSTGRES_PASSWORD:-hookfan}@db:5432/${POSTGRES_DB:-hookfan}?sslmode=disable
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN is required - see .env.example}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:?SECRET_ENCRYPTION_KEY is required - see .env.example}
+      PORT: 8080
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-16}
+      EVENT_RETENTION_DAYS: ${EVENT_RETENTION_DAYS:-30}
+      # Backend services live on this compose network, i.e. on private
+      # addresses, so the SSRF guard must permit them here.
+      ALLOW_PRIVATE_TARGETS: ${ALLOW_PRIVATE_TARGETS:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      # Only this port needs to be reachable from the internet: Meta posts here.
+      - "${API_PORT:-8081}:8080"
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    depends_on:
+      - api
+    environment:
+      # The address YOUR BROWSER can reach, not the compose service name.
+      # http://api:8080 resolves only inside this network, and the request
+      # originates in the browser — this is the mistake everyone makes first.
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:8081}
+    ports:
+      - "${UI_PORT:-8080}:8080"
+    restart: unless-stopped
+
+volumes:
+  hookfan-db:

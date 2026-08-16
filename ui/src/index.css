@@ -1,0 +1,57 @@
+@import 'tailwindcss';
+
+/*
+ * An operator tool, used while debugging at 2am: dense, high-contrast, and
+ * monospace wherever a value must be read or compared exactly.
+ */
+@theme {
+  --color-ink-950: #0a0c10;
+  --color-ink-900: #0f1218;
+  --color-ink-850: #141821;
+  --color-ink-800: #1a1f2b;
+  --color-ink-700: #252c3a;
+  --color-ink-600: #364052;
+  --color-ink-400: #6b7891;
+  --color-ink-300: #94a1b8;
+  --color-ink-200: #c3cddd;
+  --color-ink-100: #e6ecf5;
+
+  --color-ok-500: #2ea043;
+  --color-ok-400: #3fb950;
+  --color-warn-500: #d29922;
+  --color-warn-400: #e3b341;
+  --color-bad-500: #da3633;
+  --color-bad-400: #f85149;
+  --color-info-500: #1f6feb;
+  --color-info-400: #58a6ff;
+
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-ink-950);
+  color: var(--color-ink-200);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Slim scrollbars: the dense tables have several scroll regions on screen. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--color-ink-900); }
+::-webkit-scrollbar-thumb {
+  background: var(--color-ink-700);
+  border-radius: 5px;
+  border: 2px solid var(--color-ink-900);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--color-ink-600); }
+
+:focus-visible {
+  outline: 2px solid var(--color-info-400);
+  outline-offset: 1px;
+}
