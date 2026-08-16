@@ -102,6 +102,7 @@ export default function Events() {
           <thead className="bg-ink-850 text-[11px] uppercase tracking-wide text-ink-400">
             <tr>
               <th className="w-6 px-2 py-1.5"></th>
+              <th className="w-16 px-3 py-1.5 font-medium">ID</th>
               <th className="px-3 py-1.5 font-medium">Received</th>
               <th className="px-3 py-1.5 font-medium">Listener</th>
               <th className="px-3 py-1.5 font-medium">Routing keys</th>
@@ -112,10 +113,10 @@ export default function Events() {
           </thead>
           <tbody className="divide-y divide-ink-800 bg-ink-900">
             {loading && events.length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-6 text-center"><Spinner /></td></tr>
+              <tr><td colSpan={8} className="px-3 py-6 text-center"><Spinner /></td></tr>
             )}
             {!loading && events.length === 0 && (
-              <tr><td colSpan={7}>
+              <tr><td colSpan={8}>
                 <EmptyState title="No events"
                   hint="Post a webhook to /hooks/{slug} and it will appear here." />
               </td></tr>
@@ -174,6 +175,11 @@ function EventRow({ event, expanded, onToggle }: {
       <tr className="cursor-pointer hover:bg-ink-850" onClick={onToggle}>
         <td className="px-2 py-1 text-center text-ink-400">{expanded ? '▾' : '▸'}</td>
         <td className="px-3 py-1">
+          {/* The same id a receiver sees in X-Hookfan-Event-Id, so a log line
+              on the far end can be matched to a row here. */}
+          <Mono className="text-ink-300">#{event.id}</Mono>
+        </td>
+        <td className="px-3 py-1">
           <Mono className="text-ink-200">{new Date(event.received_at).toLocaleTimeString()}</Mono>
           <span className="ml-1.5 text-[11px] text-ink-400">{relativeTime(event.received_at)}</span>
         </td>
@@ -204,7 +210,7 @@ function EventRow({ event, expanded, onToggle }: {
 
       {expanded && (
         <tr className="bg-ink-950">
-          <td colSpan={7} className="px-4 py-3">
+          <td colSpan={8} className="px-4 py-3">
             {loading && <Spinner />}
             {detail && <EventDetailPanel detail={detail} />}
           </td>
@@ -300,6 +306,8 @@ function EventDetailPanel({ detail }: { detail: EventDetail }) {
                 <div key={d.id} className="rounded border border-ink-800 bg-ink-900 p-2">
                   <div className="flex items-center gap-2">
                     <Pill status={d.status} />
+                    {/* The id POST /api/deliveries/{id}/retry takes. */}
+                    <Mono className="text-ink-400">#{d.id}</Mono>
                     <Mono className="text-ink-300">{d.service_id.slice(0, 16)}…</Mono>
                     <Mono className="ml-auto text-ink-400">
                       att {d.attempt_count}

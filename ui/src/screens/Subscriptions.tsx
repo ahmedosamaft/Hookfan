@@ -74,6 +74,7 @@ export default function Subscriptions() {
         <table className="w-full text-left">
           <thead className="bg-ink-850 text-[11px] uppercase tracking-wide text-ink-400">
             <tr>
+              <th className="w-14 px-3 py-1.5 font-medium">ID</th>
               <th className="px-3 py-1.5 font-medium">Listener</th>
               <th className="px-3 py-1.5 font-medium">Service</th>
               <th className="px-3 py-1.5 font-medium">Filter</th>
@@ -83,10 +84,10 @@ export default function Subscriptions() {
           </thead>
           <tbody className="divide-y divide-ink-800 bg-ink-900">
             {subs === null && (
-              <tr><td colSpan={5} className="px-3 py-6 text-center"><Spinner /></td></tr>
+              <tr><td colSpan={6} className="px-3 py-6 text-center"><Spinner /></td></tr>
             )}
             {subs?.length === 0 && (
-              <tr><td colSpan={5}>
+              <tr><td colSpan={6}>
                 <EmptyState title="No subscriptions yet"
                   hint="Without one, received events are stored but never forwarded." />
               </td></tr>
@@ -95,12 +96,22 @@ export default function Subscriptions() {
               const svc = service(s.service_id)
               return (
                 <tr key={s.id} className="hover:bg-ink-850">
-                  <td className="px-3 py-1.5"><Mono className="text-ink-200">{listenerName(s.listener_id)}</Mono></td>
+                  {/* This id appears in a delivery's matched_subscription_ids,
+                      which is how an operator traces why a service received
+                      an event back to the subscription responsible. */}
+                  <td className="px-3 py-1.5"><Mono className="text-ink-400">#{s.id}</Mono></td>
                   <td className="px-3 py-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-ink-100">{svc?.name ?? s.service_id}</span>
-                      {svc && svc.status !== 'verified' && <Pill status={svc.status} />}
+                    <Mono className="text-ink-200">{listenerName(s.listener_id)}</Mono>
+                    <Mono className="ml-1 text-ink-400">#{s.listener_id}</Mono>
+                  </td>
+                  <td className="px-3 py-1.5">
+                    <div className="text-xs text-ink-100">
+                      {svc?.name ?? s.service_id}
+                      {svc && svc.status !== 'verified' && (
+                        <span className="ml-1.5 align-middle"><Pill status={svc.status} /></span>
+                      )}
                     </div>
+                    <Mono className="text-ink-400">{s.service_id}</Mono>
                   </td>
                   <td className="px-3 py-1.5">
                     <div className="flex items-center gap-1.5">

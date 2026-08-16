@@ -94,6 +94,7 @@ export default function Dashboard() {
                   <span className="truncate text-xs font-medium text-ink-100">{s.name}</span>
                   <Pill status={s.status} />
                 </div>
+                <p className="mt-0.5 truncate font-mono text-[11px] text-ink-400" title={s.id}>{s.id}</p>
                 <div className="mt-2 flex items-center gap-3 font-mono text-[11px] text-ink-400">
                   <span className="text-ok-400">{s.success_24h} ok</span>
                   <span className={s.failed_24h > 0 ? 'text-bad-400' : ''}>{s.failed_24h} fail</span>

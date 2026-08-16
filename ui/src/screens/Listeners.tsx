@@ -56,6 +56,7 @@ export default function Listeners() {
         <table className="w-full text-left">
           <thead className="bg-ink-850 text-[11px] uppercase tracking-wide text-ink-400">
             <tr>
+              <th className="w-14 px-3 py-1.5 font-medium">ID</th>
               <th className="px-3 py-1.5 font-medium">Name</th>
               <th className="px-3 py-1.5 font-medium">Callback URL</th>
               <th className="px-3 py-1.5 font-medium">Provider</th>
@@ -66,16 +67,21 @@ export default function Listeners() {
           </thead>
           <tbody className="divide-y divide-ink-800 bg-ink-900">
             {listeners === null && (
-              <tr><td colSpan={6} className="px-3 py-6 text-center text-xs text-ink-400"><Spinner /></td></tr>
+              <tr><td colSpan={7} className="px-3 py-6 text-center text-xs text-ink-400"><Spinner /></td></tr>
             )}
             {listeners?.length === 0 && (
-              <tr><td colSpan={6}>
+              <tr><td colSpan={7}>
                 <EmptyState title="No listeners yet"
                   hint="Create one to get a callback URL to paste into the Meta app dashboard." />
               </td></tr>
             )}
             {listeners?.map(l => (
               <tr key={l.id} className="hover:bg-ink-850">
+                <td className="px-3 py-1.5">
+                  {/* The listener id is what /api/subscriptions?listener_id=
+                      takes, so it is worth showing rather than hiding. */}
+                  <Mono className="text-ink-400">#{l.id}</Mono>
+                </td>
                 <td className="px-3 py-1.5">
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-ink-100">{l.name}</span>
