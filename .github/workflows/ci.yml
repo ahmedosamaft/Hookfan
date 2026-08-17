@@ -144,16 +144,41 @@ jobs:
 
       - name: Start the stack
         run: |
+          set -euo pipefail
           cp .env.example .env
-          {
-            echo "ADMIN_TOKEN=$(openssl rand -base64 32)"
-            echo "SECRET_ENCRYPTION_KEY=$(openssl rand -base64 32)"
-          } >> .env
+
+          # .env.example already declares these as empty keys. Appending would
+          # leave two of each: compose reads the last, but `grep | cut` in the
+          # steps below reads the first — an empty value — which produced a
+          # malformed Authorization header and an HTTP 400. Substitute in place.
+          #
+          # hex rather than base64 for the token: base64 can contain '/' and
+          # '+', which need escaping inside a sed replacement.
+          sed -i "s|^ADMIN_TOKEN=.*|ADMIN_TOKEN=$(openssl rand -hex 32)|" .env
+          # The key must decode to exactly 32 bytes, so it stays base64. Using
+          # '#' as the delimiter keeps any '/' in the value harmless.
+          sed -i "s#^SECRET_ENCRYPTION_KEY=.*#SECRET_ENCRYPTION_KEY=$(openssl rand -base64 32)#" .env
+
+          # Fail here, not twenty lines later behind a confusing 4xx.
+          for key in ADMIN_TOKEN SECRET_ENCRYPTION_KEY; do
+            n="$(grep -c "^${key}=" .env)"
+            v="$(grep "^${key}=" .env | cut -d= -f2-)"
+            if [ "$n" != "1" ] || [ -z "$v" ]; then
+              echo "::error::${key} appears ${n} time(s) in .env and resolves to '${v}'"
+              exit 1
+            fi
+          done
+
           docker compose up -d --build
           for _ in $(seq 1 60); do
             curl -sf http://localhost:8081/healthz >/dev/null && break
             sleep 2
           done
+          curl -sf http://localhost:8081/healthz >/dev/null || {
+            echo "::error::the API never became healthy"
+            docker compose logs --tail 80
+            exit 1
+          }
 
       # Exercises the ingest path end to end: a real HMAC over the exact bytes,
       # and a tampered copy that must be rejected.
@@ -163,10 +188,17 @@ jobs:
           TOKEN="$(grep '^ADMIN_TOKEN=' .env | cut -d= -f2-)"
           SECRET='ci-app-secret'
 
-          curl -sf -X POST http://localhost:8081/api/listeners \
+          # Not `curl -sf`: -f discards the response body, which is where the
+          # server explains itself. Capture the status and assert on it.
+          body="$(curl -s -w '\n%{http_code}' -X POST http://localhost:8081/api/listeners \
             -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-            -d "{\"name\":\"CI\",\"slug\":\"ci\",\"provider\":\"meta\",
-                 \"secret\":\"$SECRET\",\"challenge_verify_token\":\"ci-verify\"}" >/dev/null
+            -d "{\"name\":\"CI\",\"slug\":\"ci\",\"provider\":\"meta\",\"secret\":\"$SECRET\",\"challenge_verify_token\":\"ci-verify\"}")"
+          code="$(printf '%s' "$body" | tail -1)"
+          if [ "$code" != "201" ]; then
+            echo "::error::creating the listener returned HTTP $code"
+            printf '%s\n' "$body" | head -n -1
+            exit 1
+          fi
 
           # The Meta GET handshake must echo hub.challenge verbatim.
           got="$(curl -sf 'http://localhost:8081/hooks/ci?hub.mode=subscribe&hub.verify_token=ci-verify&hub.challenge=ci123')"
