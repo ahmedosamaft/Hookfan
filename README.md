@@ -205,6 +205,7 @@ Go is optional — the Makefile falls back to a `golang:1.25-alpine` container.
 
 | | |
 |---|---|
+| [docs/architecture-walkthrough.html](docs/architecture-walkthrough.html) | Visual walkthrough — open in a browser. Animated data flow, the schema, and the failure modes |
 | [docs/plan.md](docs/plan.md) | Architecture, schema, phase plan |
 | [docs/decisions/](docs/decisions/) | Architecture Decision Records — why things are the way they are |
 | [docs/spec-driven-development.md](docs/spec-driven-development.md) | How this project is specified and built |

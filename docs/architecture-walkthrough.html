@@ -1,0 +1,1178 @@
+<title>Hookfan Internals</title>
+<style>
+  /* ---- Tokens: light is the bare :root, dark redefines only tokens ---- */
+  :root {
+    --ground:      #F7F8FA;
+    --surface:     #FFFFFF;
+    --surface-2:   #EFF1F5;
+    --hairline:    #D8DDE6;
+    --hairline-2:  #C3CAD6;
+    --ink:         #10141C;
+    --ink-2:       #3D4757;
+    --ink-3:       #6B7688;
+    --signal:      #0E7C8C;
+    --signal-soft: rgba(14,124,140,.10);
+    --signal-line: rgba(14,124,140,.35);
+    --ok:          #1A7F37;
+    --warn:        #9A6700;
+    --bad:         #CF222E;
+    --ok-soft:     rgba(26,127,55,.12);
+    --warn-soft:   rgba(154,103,0,.12);
+    --bad-soft:    rgba(207,34,46,.12);
+    --shadow:      0 1px 2px rgba(16,20,28,.06), 0 8px 24px rgba(16,20,28,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #0B0E14;
+      --surface:     #131823;
+      --surface-2:   #1A2130;
+      --hairline:    #232B3A;
+      --hairline-2:  #2F3A4D;
+      --ink:         #E8EDF5;
+      --ink-2:       #A9B4C6;
+      --ink-3:       #6F7C91;
+      --signal:      #4DD9E8;
+      --signal-soft: rgba(77,217,232,.10);
+      --signal-line: rgba(77,217,232,.32);
+      --ok:          #3FB950;
+      --warn:        #E3B341;
+      --bad:         #F85149;
+      --ok-soft:     rgba(63,185,80,.13);
+      --warn-soft:   rgba(227,179,65,.13);
+      --bad-soft:    rgba(248,81,73,.13);
+      --shadow:      0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.28);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:      #0B0E14;
+    --surface:     #131823;
+    --surface-2:   #1A2130;
+    --hairline:    #232B3A;
+    --hairline-2:  #2F3A4D;
+    --ink:         #E8EDF5;
+    --ink-2:       #A9B4C6;
+    --ink-3:       #6F7C91;
+    --signal:      #4DD9E8;
+    --signal-soft: rgba(77,217,232,.10);
+    --signal-line: rgba(77,217,232,.32);
+    --ok:          #3FB950;
+    --warn:        #E3B341;
+    --bad:         #F85149;
+    --ok-soft:     rgba(63,185,80,.13);
+    --warn-soft:   rgba(227,179,65,.13);
+    --bad-soft:    rgba(248,81,73,.13);
+    --shadow:      0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.28);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink-2);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .mono, code, pre, .k {
+    font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-variant-ligatures: none;
+  }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px 96px; }
+
+  /* ---- Masthead ---- */
+  header.top {
+    border-bottom: 1px solid var(--hairline);
+    background:
+      linear-gradient(var(--ground), var(--ground)) padding-box,
+      radial-gradient(120% 140% at 12% 0%, var(--signal-soft), transparent 60%) border-box;
+    padding: 56px 0 40px;
+  }
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--signal); margin: 0 0 14px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .eyebrow::after {
+    content: ""; height: 1px; flex: 1; background: var(--signal-line);
+  }
+  h1 {
+    margin: 0 0 12px; color: var(--ink);
+    font-size: clamp(30px, 5vw, 46px); line-height: 1.08;
+    letter-spacing: -.022em; font-weight: 640; text-wrap: balance;
+  }
+  .standfirst { margin: 0; max-width: 62ch; font-size: 17px; color: var(--ink-2); }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+
+  .facts {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 26px;
+  }
+  .fact {
+    font-family: ui-monospace, Menlo, monospace; font-size: 11.5px;
+    border: 1px solid var(--hairline); background: var(--surface);
+    color: var(--ink-2); padding: 5px 10px; border-radius: 3px;
+  }
+  .fact b { color: var(--signal); font-weight: 600; }
+
+  /* ---- Section scaffolding: numbers are real sequence (pipeline order) ---- */
+  section { padding-top: 60px; scroll-margin-top: 20px; }
+  .sec-head { display: flex; gap: 16px; align-items: baseline; margin-bottom: 6px; }
+  .sec-num {
+    font-family: Georgia, "Times New Roman", serif; font-style: italic;
+    font-size: 26px; color: var(--signal); line-height: 1;
+    flex: none; width: 34px; opacity: .85;
+  }
+  h2 {
+    margin: 0; color: var(--ink); font-size: 25px; letter-spacing: -.015em;
+    font-weight: 620; text-wrap: balance;
+  }
+  .sec-sub { margin: 2px 0 22px 50px; color: var(--ink-3); font-size: 14.5px; max-width: 66ch; }
+  section > p, section > .note { max-width: 68ch; margin-left: 50px; }
+  @media (max-width: 720px) {
+    .sec-sub, section > p, section > .note { margin-left: 0; }
+  }
+
+  /* ---- Pipeline animation ---- */
+  .stage-board {
+    margin-top: 30px; border: 1px solid var(--hairline); border-radius: 6px;
+    background: var(--surface); box-shadow: var(--shadow); overflow: hidden;
+  }
+  .board-bar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 10px 14px; border-bottom: 1px solid var(--hairline);
+    background: var(--surface-2);
+  }
+  .board-title {
+    font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3);
+  }
+  .btn {
+    font: 500 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: 7px 12px; border-radius: 4px; cursor: pointer;
+    border: 1px solid var(--hairline-2); background: var(--surface); color: var(--ink);
+    transition: background .15s, border-color .15s, transform .06s;
+  }
+  .btn:hover { background: var(--surface-2); border-color: var(--signal); }
+  .btn:active { transform: translateY(1px); }
+  .btn[aria-pressed="true"] { border-color: var(--signal); color: var(--signal); }
+  .btn:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+  .btn.primary { background: var(--signal); border-color: var(--signal); color: var(--ground); }
+  .btn.primary:hover { filter: brightness(1.08); background: var(--signal); }
+
+  .track { position: relative; padding: 30px 18px 22px; overflow-x: auto; }
+  .rail {
+    position: relative; display: grid; gap: 8px; min-width: 660px;
+    grid-template-columns: repeat(6, 1fr);
+  }
+  .node {
+    position: relative; border: 1px solid var(--hairline); border-radius: 5px;
+    background: var(--surface-2); padding: 12px 11px; min-height: 108px;
+    transition: border-color .25s, box-shadow .25s, transform .25s;
+  }
+  .node .n-i {
+    font-family: ui-monospace, Menlo, monospace; font-size: 10px;
+    color: var(--ink-3); letter-spacing: .1em;
+  }
+  .node .n-t {
+    color: var(--ink); font-weight: 600; font-size: 13.5px; margin: 5px 0 4px;
+  }
+  .node .n-d { font-size: 11.5px; color: var(--ink-3); line-height: 1.45; }
+  .node.on {
+    border-color: var(--signal); box-shadow: 0 0 0 1px var(--signal-line), 0 6px 18px var(--signal-soft);
+    transform: translateY(-2px);
+  }
+  .node.on .n-i { color: var(--signal); }
+  .node.done { border-color: var(--hairline-2); }
+  .node.rejected { border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad-soft); }
+
+  /* the moving packet */
+  .packet {
+    position: absolute; top: -14px; left: 0; width: 54px; height: 20px;
+    border-radius: 3px; background: var(--signal); color: var(--ground);
+    font-family: ui-monospace, Menlo, monospace; font-size: 10px; font-weight: 700;
+    display: grid; place-items: center; letter-spacing: .06em;
+    transition: transform .62s cubic-bezier(.5,.05,.2,1), opacity .3s, background .3s;
+    box-shadow: 0 3px 12px var(--signal-line);
+    opacity: 0; pointer-events: none;
+  }
+  .packet.bad { background: var(--bad); }
+
+  .readout {
+    border-top: 1px solid var(--hairline); background: var(--surface);
+    padding: 12px 16px; min-height: 76px;
+  }
+  .readout-line {
+    font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+    color: var(--ink-2); display: flex; gap: 10px; align-items: flex-start;
+    padding: 3px 0; opacity: 0; animation: fadeUp .28s ease forwards;
+  }
+  .readout-line .tag {
+    flex: none; font-size: 10px; padding: 1px 6px; border-radius: 3px;
+    letter-spacing: .06em; text-transform: uppercase; font-weight: 700;
+  }
+  .tag.ok   { background: var(--ok-soft);   color: var(--ok); }
+  .tag.warn { background: var(--warn-soft); color: var(--warn); }
+  .tag.bad  { background: var(--bad-soft);  color: var(--bad); }
+  .tag.sig  { background: var(--signal-soft); color: var(--signal); }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  /* ---- Prose bits ---- */
+  p { margin: 0 0 14px; }
+  .note {
+    border-left: 2px solid var(--signal); background: var(--signal-soft);
+    padding: 12px 16px; border-radius: 0 4px 4px 0; font-size: 14px; margin: 20px 0;
+  }
+  .note.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+  .note b { color: var(--ink); }
+  .k { color: var(--signal); font-size: .92em; }
+  code:not(pre code) {
+    background: var(--surface-2); border: 1px solid var(--hairline);
+    padding: 1px 5px; border-radius: 3px; font-size: .88em; color: var(--ink);
+  }
+
+  pre {
+    margin: 0; padding: 14px 16px; overflow-x: auto;
+    background: var(--surface); border: 1px solid var(--hairline);
+    border-radius: 5px; font-size: 12.5px; line-height: 1.62; color: var(--ink-2);
+  }
+  .code-wrap { margin: 18px 0 18px 50px; }
+  @media (max-width: 720px) { .code-wrap { margin-left: 0; } }
+  .code-cap {
+    font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--ink-3);
+    padding: 7px 12px; border: 1px solid var(--hairline); border-bottom: none;
+    border-radius: 5px 5px 0 0; background: var(--surface-2);
+    display: flex; justify-content: space-between; gap: 12px; align-items: center;
+  }
+  .code-cap + pre { border-radius: 0 0 5px 5px; }
+  .code-cap .why { color: var(--signal); text-transform: none; letter-spacing: 0; }
+  .cm { color: var(--ink-3); font-style: italic; }
+  .kw { color: var(--signal); }
+  .st { color: var(--ok); }
+
+  /* ---- Schema ---- */
+  .schema {
+    display: grid; gap: 14px; margin-top: 26px;
+    grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+  }
+  .tbl {
+    border: 1px solid var(--hairline); border-radius: 5px; overflow: hidden;
+    background: var(--surface); box-shadow: var(--shadow);
+    transition: border-color .2s, transform .2s;
+  }
+  .tbl:hover { border-color: var(--signal); transform: translateY(-2px); }
+  .tbl h3 {
+    margin: 0; padding: 9px 12px; background: var(--surface-2);
+    border-bottom: 1px solid var(--hairline);
+    font-family: ui-monospace, Menlo, monospace; font-size: 12.5px;
+    color: var(--ink); letter-spacing: .04em; font-weight: 600;
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  }
+  .tbl h3 span { font-size: 10px; color: var(--ink-3); letter-spacing: .1em; font-weight: 500; }
+  .cols { margin: 0; padding: 6px 0; list-style: none; }
+  .cols li {
+    display: flex; gap: 8px; align-items: baseline; padding: 3px 12px;
+    font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--ink-2);
+  }
+  .cols li b { color: var(--ink); font-weight: 600; }
+  .cols li i {
+    margin-left: auto; font-style: normal; font-size: 10px; color: var(--ink-3);
+  }
+  .cols li.pk b { color: var(--signal); }
+  .cols li.hot { background: var(--signal-soft); }
+  .idx {
+    border-top: 1px dashed var(--hairline); padding: 8px 12px;
+    font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: var(--ink-3);
+    line-height: 1.7;
+  }
+  .idx u { text-decoration: none; color: var(--signal); }
+
+  /* ---- Sub-heading inside a section ---- */
+  .sub-h {
+    margin: 34px 0 0 50px; color: var(--ink); font-size: 15px; font-weight: 620;
+    letter-spacing: -.005em;
+  }
+  .sub-h::before {
+    content: ""; display: block; width: 26px; height: 2px;
+    background: var(--signal-line); margin-bottom: 10px;
+  }
+  @media (max-width: 720px) { .sub-h { margin-left: 0; } }
+
+  /* ---- Reaper timeline ---- */
+  .timeline { margin: 22px 0 4px 50px; display: grid; gap: 5px; }
+  @media (max-width: 720px) { .timeline { margin-left: 0; } }
+  .tl-row {
+    display: grid; grid-template-columns: 52px 92px 1fr; gap: 12px; align-items: center;
+    padding: 7px 12px; border: 1px solid var(--hairline); border-radius: 4px;
+    background: var(--surface); font-size: 12.5px;
+  }
+  .tl-when {
+    font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+    color: var(--ink-3); font-variant-numeric: tabular-nums;
+  }
+  .tl-bar {
+    height: 6px; border-radius: 3px; background: var(--c);
+    width: var(--w); min-width: 6px;
+    transform-origin: left; animation: grow .6s cubic-bezier(.4,0,.2,1) both;
+  }
+  .tl-what { color: var(--ink-2); }
+  .tl-what em { color: var(--ink); font-style: italic; }
+
+  /* ---- Silent-failure symptom table ---- */
+  .symptoms { margin: 22px 0 8px 50px; display: grid; gap: 5px; }
+  @media (max-width: 720px) { .symptoms { margin-left: 0; } }
+  .sym {
+    display: grid; grid-template-columns: 116px 210px 1fr; gap: 14px; align-items: baseline;
+    padding: 10px 14px; border: 1px solid var(--hairline); border-radius: 4px;
+    background: var(--surface); font-size: 12.5px;
+  }
+  @media (max-width: 860px) {
+    .sym { grid-template-columns: 1fr; gap: 3px; }
+  }
+  .sym-who {
+    font-weight: 620; color: var(--ink);
+    font-size: 12.5px;
+  }
+  .sym-sees { color: var(--ink-2); font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+  .sym-why  { color: var(--ink-3); }
+  .ok-t   { color: var(--ok);   font-weight: 700; }
+  .bad-t  { color: var(--bad);  font-weight: 700; }
+  .warn-t { color: var(--warn); font-weight: 700; }
+
+  /* ---- Alerting checklist ---- */
+  .alert-grid { margin: 20px 0 6px 50px; display: grid; gap: 5px; }
+  @media (max-width: 720px) { .alert-grid { margin-left: 0; } }
+  .al {
+    display: grid; grid-template-columns: 108px 1fr; gap: 14px; align-items: baseline;
+    padding: 10px 14px; border: 1px solid var(--hairline);
+    border-left: 2px solid var(--signal-line);
+    border-radius: 0 4px 4px 0; background: var(--surface); font-size: 13px;
+  }
+  @media (max-width: 720px) { .al { grid-template-columns: 1fr; gap: 3px; } }
+  .al-k {
+    font-family: ui-monospace, Menlo, monospace; font-size: 10.5px;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--signal);
+  }
+  .al-v { color: var(--ink-2); }
+  .al-v b { color: var(--ink); }
+
+  /* ---- Retry ladder ---- */
+  .ladder { margin: 22px 0 0 50px; display: grid; gap: 6px; max-width: 640px; }
+  @media (max-width: 720px) { .ladder { margin-left: 0; } }
+  .rung {
+    display: grid; grid-template-columns: 76px 1fr auto; gap: 12px; align-items: center;
+    border: 1px solid var(--hairline); border-radius: 4px; padding: 8px 12px;
+    background: var(--surface); font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+  }
+  .rung .bar {
+    height: 7px; border-radius: 4px; background: var(--signal-line);
+    transform-origin: left; animation: grow .7s cubic-bezier(.4,0,.2,1) both;
+  }
+  @keyframes grow { from { transform: scaleX(.02); } to { transform: scaleX(1); } }
+  .rung .who { color: var(--ink-3); font-size: 11px; }
+
+  footer {
+    margin-top: 74px; padding-top: 22px; border-top: 1px solid var(--hairline);
+    color: var(--ink-3); font-size: 12.5px;
+    display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .001ms !important; transition-duration: .001ms !important;
+    }
+  }
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <p class="eyebrow">Hookfan &middot; how it works</p>
+    <h1>One webhook in, many services out &mdash; without losing any of them</h1>
+    <p class="standfirst">
+      Meta gives an app <strong>exactly one</strong> callback URL. Hookfan makes that URL a
+      durable fan-out point: it verifies the signature, stores the payload byte-for-byte,
+      and forwards it to every service that subscribed &mdash; retrying, tracking, and
+      replaying each attempt. This page walks the path a single payload takes.
+    </p>
+    <div class="facts">
+      <span class="fact">ingest p99 <b>3.93 ms</b></span>
+      <span class="fact">datastore <b>Postgres only</b></span>
+      <span class="fact">deliveries per service <b>exactly 1</b></span>
+      <span class="fact">breaker trips at <b>20 failures</b></span>
+      <span class="fact">API image <b>14.7 MB</b></span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ============ 1. THE PIPELINE ============ -->
+  <section id="pipeline">
+    <div class="sec-head"><span class="sec-num">1</span><h2>The path a payload takes</h2></div>
+    <p class="sec-sub">
+      Six stages, three processes. Press play to send one through &mdash; then try the
+      variants, which follow the same code down different branches.
+    </p>
+
+    <div class="stage-board">
+      <div class="board-bar">
+        <span class="board-title">Trace</span>
+        <button class="btn primary" id="run-ok">▶ Valid webhook</button>
+        <button class="btn" id="run-bad">Tampered body</button>
+        <button class="btn" id="run-dup">Redelivery</button>
+        <button class="btn" id="run-fail">Service down</button>
+      </div>
+
+      <div class="track">
+        <div class="rail" id="rail">
+          <div class="node" data-i="0">
+            <div class="n-i">01 · NET</div>
+            <div class="n-t">Provider POST</div>
+            <div class="n-d">Meta sends the batch to <span class="k">/hooks/{slug}</span>.</div>
+          </div>
+          <div class="node" data-i="1">
+            <div class="n-i">02 · INGEST</div>
+            <div class="n-t">Verify HMAC</div>
+            <div class="n-d">Over the <em>exact</em> bytes, before any parsing.</div>
+          </div>
+          <div class="node" data-i="2">
+            <div class="n-i">03 · INGEST</div>
+            <div class="n-t">One INSERT</div>
+            <div class="n-d">Store raw body, return 200. Nothing else.</div>
+          </div>
+          <div class="node" data-i="3">
+            <div class="n-i">04 · PLANNER</div>
+            <div class="n-t">Match &amp; dedup</div>
+            <div class="n-d">Subscriptions → a <em>set</em> of services.</div>
+          </div>
+          <div class="node" data-i="4">
+            <div class="n-i">05 · WORKER</div>
+            <div class="n-t">Claim &amp; send</div>
+            <div class="n-d"><span class="k">SKIP LOCKED</span>, then HTTP with retries.</div>
+          </div>
+          <div class="node" data-i="5">
+            <div class="n-i">06 · NET</div>
+            <div class="n-t">Your services</div>
+            <div class="n-d">Byte-identical body, signed by the gateway.</div>
+          </div>
+          <div class="packet mono" id="packet">BODY</div>
+        </div>
+      </div>
+
+      <div class="readout" id="readout">
+        <div class="readout-line"><span class="tag sig">idle</span><span>Pick a trace above.</span></div>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>Why the split?</b> Ingest returns <code>200</code> before any fan-out happens.
+      Meta disables a callback URL that returns errors or answers slowly, so the request
+      goroutine does the minimum that is still correct: verify, one row, done.
+    </div>
+  </section>
+
+  <!-- ============ 2. INGEST ============ -->
+  <section id="ingest">
+    <div class="sec-head"><span class="sec-num">2</span><h2>Ingest reads bytes, not JSON</h2></div>
+    <p class="sec-sub">
+      The signature covers the exact octets Meta sent. Decode first and you can never
+      verify again &mdash; key order and whitespace will have changed.
+    </p>
+
+    <div class="code-wrap">
+      <div class="code-cap">
+        <span>internal/ingest/handler.go</span>
+        <span class="why">order is load-bearing</span>
+      </div>
+<pre><span class="cm">// Read the exact bytes before any decoding. Re-marshalling would reorder
+// keys and change whitespace, and the signature covers these bytes only.</span>
+r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)   <span class="cm">// 1 MB cap</span>
+body, err := io.ReadAll(r.Body)
+
+<span class="kw">if</span> !h.verify(w, r, listener, encSecret, body) {
+    <span class="kw">return</span>   <span class="cm">// 401 — never persisted as a deliverable event</span>
+}
+
+keys := router.ExtractRoutingKeys(body, listener.RoutingKeyPath)
+
+event, duplicate, err := h.Store.InsertEvent(r.Context(), store.InsertEventParams{
+    ListenerID:  listener.ID,
+    RoutingKeys: keys,          <span class="cm">// every entry[].id in the batch</span>
+    RawBody:     body,          <span class="cm">// byte-exact, stored as bytea</span>
+    DedupeKey:   crypto.BodyHash(body),
+})</pre>
+    </div>
+
+    <p>
+      Three decisions are hiding in those lines. The <code>MaxBytesReader</code> cap keeps an
+      unauthenticated endpoint from becoming a memory exhaustion vector. The comparison inside
+      <code>verify</code> uses <code>hmac.Equal</code>, which is constant-time, so a mismatch
+      leaks nothing about where the digests diverged. And <code>DedupeKey</code> is the
+      SHA-256 of the body, which is what makes a redelivery idempotent.
+    </p>
+
+    <div class="note warn">
+      <b>A rejected webhook is never stored as deliverable.</b> On a signature mismatch the
+      handler logs the listener slug and a <em>hash</em> of the body &mdash; never the body,
+      which may contain message contents.
+    </div>
+  </section>
+
+  <!-- ============ 3. DATABASE ============ -->
+  <section id="schema">
+    <div class="sec-head"><span class="sec-num">3</span><h2>Five tables, and the two indexes that matter</h2></div>
+    <p class="sec-sub">
+      Postgres is the only datastore &mdash; no Redis, no broker. Hover a table to raise it;
+      highlighted rows are the columns the hot paths touch.
+    </p>
+
+    <div class="schema">
+      <div class="tbl">
+        <h3>listeners <span>inbound</span></h3>
+        <ul class="cols">
+          <li class="pk"><b>id</b><i>bigserial</i></li>
+          <li><b>slug</b><i>unique, immutable</i></li>
+          <li><b>provider</b><i>meta | generic</i></li>
+          <li><b>secret</b><i>AES-GCM bytea</i></li>
+          <li><b>challenge_verify_token</b></li>
+          <li><b>routing_key_path</b><i>JSONPath</i></li>
+          <li><b>enabled</b></li>
+        </ul>
+        <div class="idx">slug is in the callback URL, so it can never change.</div>
+      </div>
+
+      <div class="tbl">
+        <h3>services <span>outbound</span></h3>
+        <ul class="cols">
+          <li class="pk"><b>id</b><i>bigserial</i></li>
+          <li class="hot"><b>public_id</b><i>svc_… random</i></li>
+          <li><b>url</b> · <b>method</b></li>
+          <li><b>link_token</b><i>encrypted</i></li>
+          <li><b>status</b><i>pending→verified</i></li>
+          <li class="hot"><b>consecutive_failures</b></li>
+          <li><b>disabled_at</b> · <b>disabled_reason</b></li>
+        </ul>
+        <div class="idx">
+          Breaker state lives here, not in memory &mdash; so the threshold means the
+          same thing across replicas and survives a deploy.
+        </div>
+      </div>
+
+      <div class="tbl">
+        <h3>subscriptions <span>the join</span></h3>
+        <ul class="cols">
+          <li class="pk"><b>id</b><i>bigserial</i></li>
+          <li><b>listener_id</b> → listeners</li>
+          <li><b>service_id</b> → services</li>
+          <li><b>filter_type</b><i>all|keys|jsonpath</i></li>
+          <li class="hot"><b>routing_keys</b><i>text[]</i></li>
+          <li><b>is_default</b><i>fail-safe</i></li>
+        </ul>
+        <div class="idx">
+          <u>GIN (routing_keys)</u> — the hot direction is “given this event's keys,
+          which subscriptions overlap?”
+        </div>
+      </div>
+
+      <div class="tbl">
+        <h3>events <span>immutable</span></h3>
+        <ul class="cols">
+          <li class="pk"><b>id</b><i>bigserial</i></li>
+          <li class="hot"><b>raw_body</b><i>bytea, never jsonb</i></li>
+          <li class="hot"><b>routing_keys</b><i>text[]</i></li>
+          <li><b>signature_valid</b><i>always true if stored</i></li>
+          <li class="hot"><b>dedupe_key</b><i>sha256(body)</i></li>
+          <li class="hot"><b>planned_at</b><i>NULL = pending</i></li>
+        </ul>
+        <div class="idx">
+          <u>UNIQUE (listener_id, dedupe_key)</u> — makes redelivery a no-op.<br>
+          <b>bytea, not jsonb:</b> jsonb reorders keys and normalises numbers, which
+          would silently break byte-exactness.
+        </div>
+      </div>
+
+      <div class="tbl">
+        <h3>deliveries <span>the queue</span></h3>
+        <ul class="cols">
+          <li class="pk"><b>id</b><i>bigserial</i></li>
+          <li><b>event_id</b> · <b>service_id</b></li>
+          <li class="hot"><b>status</b><i>pending→…→dead</i></li>
+          <li class="hot"><b>next_attempt_at</b></li>
+          <li><b>attempt_count</b> · <b>claimed_at</b></li>
+          <li><b>matched_subscription_ids</b><i>bigint[]</i></li>
+        </ul>
+        <div class="idx">
+          <u>UNIQUE (event_id, service_id)</u> — one delivery per service, enforced by
+          the database rather than trusted to code.<br>
+          <u>(status, next_attempt_at)</u> — the claim query's index.
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>Why <code>matched_subscription_ids</code> exists.</b> Deduplicating to one delivery
+      per service throws away <em>why</em> it was sent. Without this column an operator
+      cannot answer “which subscription caused this?” or “what stops flowing if I delete
+      that one?”
+    </div>
+  </section>
+
+  <!-- ============ 4. PLANNER ============ -->
+  <section id="planner">
+    <div class="sec-head"><span class="sec-num">4</span><h2>Matching, then collapsing to a set</h2></div>
+    <p class="sec-sub">
+      One event can match a service through several subscriptions. It must still receive
+      exactly one POST.
+    </p>
+
+    <div class="code-wrap">
+      <div class="code-cap">
+        <span>internal/router/match.go</span>
+        <span class="why">dedup by service, keep provenance</span>
+      </div>
+<pre><span class="kw">func</span> (r *MatchResult) addMatch(sub Subscription) {
+    <span class="cm">// First time we see this service, it joins the delivery set…</span>
+    <span class="kw">if</span> _, seen := r.SubscriptionsByService[sub.ServiceID]; !seen {
+        r.ServiceIDs = append(r.ServiceIDs, sub.ServiceID)
+    }
+    <span class="cm">// …but every matching subscription is still recorded.</span>
+    r.SubscriptionsByService[sub.ServiceID] =
+        append(r.SubscriptionsByService[sub.ServiceID], sub.ID)
+}</pre>
+    </div>
+
+    <p>
+      A batch carrying <code>WABA_ONE</code> and <code>WABA_TWO</code>, where a service
+      subscribes to each separately, produces <em>one</em> delivery tagged
+      <code>matched_by {1,2}</code>. The unique index on
+      <code>(event_id, service_id)</code> is the second line of defence: even a
+      double-planned event cannot send twice.
+    </p>
+
+    <div class="note">
+      <b>Nothing is dropped silently.</b> An event matching no subscription goes to the
+      listener's default subscription. If there isn't one, the planner logs it at
+      <code>WARN</code> &mdash; it still marks the event planned, so it isn't retried forever.
+    </div>
+  </section>
+
+  <!-- ============ 5. QUEUE ============ -->
+  <section id="queue">
+    <div class="sec-head"><span class="sec-num">5</span><h2>The claim query, and the version that looks identical</h2></div>
+    <p class="sec-sub">
+      This is the subtlest code in the system. The widely-copied form is wrong in a way
+      that does not show up until several workers run at once.
+    </p>
+
+    <div class="code-wrap">
+      <div class="code-cap">
+        <span>internal/store/deliveries.go</span>
+        <span class="why">CTE, not IN (SELECT …)</span>
+      </div>
+<pre><span class="kw">WITH</span> claimed <span class="kw">AS</span> (
+    <span class="kw">SELECT</span> id <span class="kw">FROM</span> deliveries
+     <span class="kw">WHERE</span> status = <span class="st">'pending'</span> <span class="kw">AND</span> next_attempt_at &lt;= now()
+     <span class="kw">ORDER BY</span> next_attempt_at          <span class="cm">-- inside the lock, not outside</span>
+     <span class="kw">FOR UPDATE SKIP LOCKED</span>
+     <span class="kw">LIMIT</span> $2
+)
+<span class="kw">UPDATE</span> deliveries d
+   <span class="kw">SET</span> status = <span class="st">'in_flight'</span>, attempt_count = d.attempt_count + 1,
+       claimed_at = now(), claimed_by = $1
+  <span class="kw">FROM</span> claimed c
+ <span class="kw">WHERE</span> d.id = c.id
+<span class="kw">RETURNING</span> d.*;</pre>
+    </div>
+
+    <div class="note warn">
+      <b>The trap.</b> With <code>WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)</code> the
+      subquery and the outer <code>UPDATE</code> take <em>separate</em> locks. The subquery
+      skips rows locked at that instant, then the outer statement re-locks those ids and
+      <em>blocks</em> on a concurrent worker instead of skipping past it. It does not
+      double-send &mdash; the re-checked predicate drops the row &mdash; but workers
+      serialise behind each other, which is precisely what <code>SKIP LOCKED</code> was
+      chosen to avoid.
+    </div>
+
+  </section>
+
+  <!-- ============ 5b. WORKERS ============ -->
+  <section id="workers">
+    <div class="sec-head"><span class="sec-num">6</span><h2>How the workers actually start</h2></div>
+    <p class="sec-sub">
+      <code>WORKER_CONCURRENCY</code> goroutines and one reaper, all launched together and
+      all stopped by the same cancelled context.
+    </p>
+
+    <div class="code-wrap">
+      <div class="code-cap">
+        <span>internal/dispatch/worker.go — Run</span>
+        <span class="why">N workers + 1 reaper, one WaitGroup</span>
+      </div>
+<pre><span class="kw">func</span> (d *Dispatcher) Run(ctx context.Context) {
+    <span class="kw">var</span> wg sync.WaitGroup
+
+    <span class="cm">// N identical workers. They are peers — no leader, no partitioning.
+    // Which row each one gets is decided by the database, not by us.</span>
+    <span class="kw">for</span> i := <span class="kw">range</span> d.Concurrency {          <span class="cm">// default 16</span>
+        wg.Add(1)
+        <span class="kw">go func</span>(id <span class="kw">int</span>) {
+            <span class="kw">defer</span> wg.Done()
+            d.worker(ctx, fmt.Sprintf(<span class="st">"worker-%d"</span>, id))
+        }(i)
+    }
+
+    wg.Add(1)
+    <span class="kw">go func</span>() { <span class="kw">defer</span> wg.Done(); d.reaper(ctx) }()
+
+    wg.Wait()   <span class="cm">// returns only once every goroutine has exited</span>
+}</pre>
+    </div>
+
+    <p>
+      The workers are deliberately identical and uncoordinated. There is no leader election
+      and no sharding of the queue, because <code>FOR UPDATE SKIP LOCKED</code> already
+      decides who gets which row &mdash; two workers reaching for the same delivery is not a
+      race to prevent, it is the normal case, and one of them simply skips past.
+      The <span class="k">claimed_by</span> column records which one won, purely so the logs
+      can be read afterwards.
+    </p>
+
+    <h3 class="sub-h">The loop each worker runs</h3>
+    <div class="code-wrap">
+      <div class="code-cap">
+        <span>internal/dispatch/worker.go — worker</span>
+        <span class="why">drain fully, then sleep</span>
+      </div>
+<pre><span class="kw">for</span> {
+    <span class="cm">// Drain: keep claiming while FULL batches come back. Without this a
+    // backlog of 500 would be metered out 8 per second, one tick at a time.</span>
+    <span class="kw">for</span> {
+        n, err := d.claimAndDeliver(ctx, workerID)   <span class="cm">// batch of 8</span>
+        <span class="kw">if</span> err != <span class="kw">nil</span> { <span class="kw">break</span> }
+        <span class="kw">if</span> n &lt; ClaimBatchSize { <span class="kw">break</span> }   <span class="cm">// short batch ⇒ queue is drained</span>
+    }
+
+    <span class="cm">// Then idle until something happens.</span>
+    <span class="kw">select</span> {
+    <span class="kw">case</span> &lt;-ctx.Done(): <span class="kw">return</span>          <span class="cm">// shutdown</span>
+    <span class="kw">case</span> &lt;-d.wake:                     <span class="cm">// planner just created deliveries</span>
+    <span class="kw">case</span> &lt;-ticker.C:                   <span class="cm">// 1s fallback poll</span>
+    }
+}</pre>
+    </div>
+
+    <div class="note">
+      <b>Two ways to wake, and only one of them is trusted.</b> The planner calls
+      <code>Notify()</code> the moment it inserts deliveries, which is what makes a delivery
+      feel immediate. But that channel is buffered with depth one and a non-blocking send
+      &mdash; a notification can be coalesced away under load. The 1&nbsp;s ticker is what
+      makes the system <em>correct</em>; the notification only makes it <em>fast</em>.
+      Losing every notification would cost latency, not deliveries.
+    </div>
+
+    <h3 class="sub-h">The reaper, and why five minutes</h3>
+    <p>
+      A worker that is killed mid-delivery leaves its row marked <code>in_flight</code> with
+      nobody coming back for it. No error is logged, because nothing errored &mdash; the
+      process simply stopped existing. That row would sit there forever.
+    </p>
+
+    <div class="code-wrap">
+      <div class="code-cap">
+        <span>internal/store/deliveries.go — ReapStuckDeliveries</span>
+        <span class="why">runs every 30s</span>
+      </div>
+<pre><span class="kw">UPDATE</span> deliveries
+   <span class="kw">SET</span> status = <span class="st">'pending'</span>, claimed_by = <span class="kw">NULL</span>,
+       last_error = <span class="st">'reclaimed: worker did not report a result'</span>
+ <span class="kw">WHERE</span> status = <span class="st">'in_flight'</span>
+   <span class="kw">AND</span> claimed_at &lt; now() - <span class="st">'5 minutes'</span>::interval;</pre>
+    </div>
+
+    <div class="timeline" id="reaper-tl">
+      <div class="tl-row">
+        <span class="tl-when">t+0s</span>
+        <span class="tl-bar" style="--w:8%; --c:var(--signal)"></span>
+        <span class="tl-what">worker-3 claims delivery #81 → <span class="k">in_flight</span>, <span class="k">claimed_at=now()</span></span>
+      </div>
+      <div class="tl-row">
+        <span class="tl-when">t+2s</span>
+        <span class="tl-bar" style="--w:14%; --c:var(--bad)"></span>
+        <span class="tl-what">the pod is evicted mid-request. Nothing is written back.</span>
+      </div>
+      <div class="tl-row">
+        <span class="tl-when">t+30s</span>
+        <span class="tl-bar" style="--w:26%; --c:var(--ink-3)"></span>
+        <span class="tl-what">reaper ticks. <span class="k">claimed_at</span> is 30s old — <em>too fresh</em>, left alone.</span>
+      </div>
+      <div class="tl-row">
+        <span class="tl-when">t+4m</span>
+        <span class="tl-bar" style="--w:62%; --c:var(--ink-3)"></span>
+        <span class="tl-what">still inside the window. Still left alone.</span>
+      </div>
+      <div class="tl-row">
+        <span class="tl-when">t+5m</span>
+        <span class="tl-bar" style="--w:100%; --c:var(--ok)"></span>
+        <span class="tl-what">threshold crossed → back to <span class="k">pending</span>, and a worker picks it up.</span>
+      </div>
+    </div>
+
+    <div class="note warn">
+      <b>Why the window has to be generous.</b> The reaper cannot tell a dead worker from a
+      slow one &mdash; both look like a row that has been <code>in_flight</code> for a while.
+      Five minutes has to comfortably exceed any service's <code>timeout_ms</code> plus the
+      longest <code>Retry-After</code> sleep it might be honouring. Set it too tight and the
+      reaper hands a still-running delivery to a second worker, and the receiving service
+      gets the same event twice &mdash; the exact thing the rest of this design works to
+      prevent.
+    </div>
+
+    <p>
+      The cost of the window being generous is bounded: a genuinely crashed delivery waits up
+      to five minutes before being retried. That is the right trade for a fan-out gateway,
+      where a duplicate POST is far more damaging than a late one.
+    </p>
+  </section>
+
+  <!-- ============ 6. RETRY ============ -->
+  <section id="retry">
+    <div class="sec-head"><span class="sec-num">7</span><h2>Backoff with full jitter</h2></div>
+    <p class="sec-sub">
+      Each bar is one attempt's ceiling. The actual delay is uniform across the whole bar,
+      starting at zero &mdash; press replay to draw a fresh set.
+    </p>
+
+    <div class="ladder" id="ladder"></div>
+
+    <p style="margin-top:18px">
+      <button class="btn" id="reroll">↻ Roll new delays</button>
+    </p>
+
+    <p>
+      Full jitter means <code>random(0, min(1h, 2s × 2ⁿ))</code>. The range starting at
+      <em>zero</em> is the point: it is what stops a fleet of failed deliveries retrying in
+      lockstep and stampeding a service the moment it recovers.
+    </p>
+
+    <div class="code-wrap">
+      <div class="code-cap">
+        <span>internal/dispatch/retry.go</span>
+        <span class="why">which responses are worth retrying</span>
+      </div>
+<pre><span class="kw">case</span> statusCode &gt;= 200 &amp;&amp; statusCode &lt;= 299:
+    <span class="kw">return</span> Decision{Success: <span class="kw">true</span>}
+
+<span class="kw">case</span> statusCode == http.StatusTooManyRequests:   <span class="cm">// 429</span>
+    delay := parseRetryAfter(header.Get(<span class="st">"Retry-After"</span>), time.Now())
+    <span class="kw">return</span> retryOrDead(attempt, maxAttempts, <span class="st">"rate limited"</span>, delay)
+
+<span class="kw">case</span> statusCode &gt;= 400 &amp;&amp; statusCode &lt;= 499:
+    <span class="cm">// A 400 will still be a 400 on attempt six.</span>
+    <span class="kw">return</span> Decision{Terminal: <span class="kw">true</span>}
+
+<span class="kw">case</span> statusCode &gt;= 500:
+    <span class="kw">return</span> retryOrDead(attempt, maxAttempts, <span class="st">"server error"</span>, delay)</pre>
+    </div>
+  </section>
+
+  <!-- ============ 7. FAILURE MODE ============ -->
+  <section id="lag">
+    <div class="sec-head"><span class="sec-num">8</span><h2>The failure that makes no noise</h2></div>
+    <p class="sec-sub">
+      Splitting ingest from fan-out buys latency, and introduces one dangerous mode. It is
+      worth knowing before you run this.
+    </p>
+
+    <p>
+      Every other failure in this system announces itself. A bad signature returns
+      <code>401</code>. A dead service turns deliveries red and eventually trips the breaker.
+      This one announces nothing at all.
+    </p>
+
+    <h3 class="sub-h">Why it is invisible</h3>
+    <p>
+      Ingest returns <code>200</code> as soon as the row is written &mdash; deliberately,
+      because Meta disables slow callback URLs. Fan-out happens later, in the planner. So if
+      the planner stops, <em>every part of the system still looks correct</em>:
+    </p>
+
+    <div class="symptoms">
+      <div class="sym">
+        <span class="sym-who">Meta</span>
+        <span class="sym-sees">sees <b class="ok-t">200 OK</b> on every webhook</span>
+        <span class="sym-why">…and stops retrying, because delivery succeeded.</span>
+      </div>
+      <div class="sym">
+        <span class="sym-who">Your logs</span>
+        <span class="sym-sees">show <b class="ok-t">no errors</b></span>
+        <span class="sym-why">Nothing errored. A goroutine that stopped doing work isn't an exception.</span>
+      </div>
+      <div class="sym">
+        <span class="sym-who"><code>/healthz</code></span>
+        <span class="sym-sees">returns <b class="ok-t">ok</b></span>
+        <span class="sym-why">The process is alive and serving. That is all it claims.</span>
+      </div>
+      <div class="sym">
+        <span class="sym-who">Your services</span>
+        <span class="sym-sees">receive <b class="bad-t">nothing</b></span>
+        <span class="sym-why">Indistinguishable from a genuinely quiet hour.</span>
+      </div>
+      <div class="sym">
+        <span class="sym-who">The database</span>
+        <span class="sym-sees">fills with <b class="warn-t">planned_at&nbsp;IS&nbsp;NULL</b></span>
+        <span class="sym-why">This is the only place the truth is written down.</span>
+      </div>
+    </div>
+
+    <h3 class="sub-h">The one query that can tell you</h3>
+    <p>
+      Every event carries <code>planned_at</code>, which stays <code>NULL</code> until the
+      planner has built its delivery set. So the age of the oldest unplanned event
+      <em>is</em> the answer: it is zero on a healthy system regardless of traffic, and it
+      climbs in real time the moment the planner stalls.
+    </p>
+
+    <div class="code-wrap">
+      <div class="code-cap">
+        <span>internal/store/store.go — PlannerLag</span>
+        <span class="why">zero when healthy, even at zero traffic</span>
+      </div>
+<pre><span class="kw">SELECT</span> COALESCE(EXTRACT(EPOCH <span class="kw">FROM</span> (now() - MIN(received_at))), 0)
+  <span class="kw">FROM</span> events
+ <span class="kw">WHERE</span> planned_at <span class="kw">IS NULL</span>;</pre>
+    </div>
+
+    <p>
+      Note what it is <em>not</em>: not a count of unplanned events, and not a rate. A count
+      is high during a healthy burst and low during a slow leak. The <b>age of the oldest</b>
+      unplanned event is unaffected by volume &mdash; it answers "how long has something been
+      stuck?", which is the actual question.
+    </p>
+
+    <h3 class="sub-h">What to alert on</h3>
+
+    <div class="code-wrap">
+      <div class="code-cap"><span>this is already wired up — just point a monitor at it</span></div>
+<pre>$ curl -s localhost:8081/readyz
+
+<span class="cm"># healthy — note lag is 0 even with no traffic at all</span>
+{<span class="st">"status"</span>:<span class="st">"ok"</span>,
+ <span class="st">"checks"</span>:{<span class="st">"database"</span>:<span class="st">"ok"</span>,<span class="st">"planner"</span>:<span class="st">"ok"</span>,<span class="st">"planner_lag_seconds"</span>:0}}
+
+<span class="cm"># wedged — HTTP 503, and the lag climbs every second</span>
+{<span class="st">"status"</span>:<span class="st">"degraded"</span>,
+ <span class="st">"checks"</span>:{<span class="st">"database"</span>:<span class="st">"ok"</span>,<span class="st">"planner"</span>:<span class="st">"behind"</span>,<span class="st">"planner_lag_seconds"</span>:412.8}}</pre>
+    </div>
+
+    <div class="alert-grid">
+      <div class="al">
+        <span class="al-k">Probe</span>
+        <span class="al-v"><code>GET /readyz</code> — returns <b>503</b> past 60s of lag</span>
+      </div>
+      <div class="al">
+        <span class="al-k">Page when</span>
+        <span class="al-v"><code>planner_lag_seconds &gt; 60</code> sustained for 2 minutes</span>
+      </div>
+      <div class="al">
+        <span class="al-k">Do not use</span>
+        <span class="al-v"><code>/healthz</code> — it deliberately ignores the planner, so a
+        blip never restarts the container</span>
+      </div>
+      <div class="al">
+        <span class="al-k">Careful with</span>
+        <span class="al-v">a k8s readiness probe on <code>/readyz</code> pulls the pod from
+        the load balancer &mdash; which stops it accepting webhooks too. Alert on it;
+        think twice before gating traffic on it.</span>
+      </div>
+    </div>
+
+    <div class="note warn">
+      <b>The one-line version.</b> Everything else in hookfan fails loudly. This fails
+      quietly, and it is the worst thing that can happen &mdash; webhooks accepted,
+      acknowledged to Meta, and forwarded to nobody. <code>planner_lag_seconds</code> is the
+      only signal that separates it from a quiet Tuesday. Put a monitor on it before you put
+      this in production.
+    </div>
+  </section>
+
+  <footer>
+    <span>Hookfan — self-hosted webhook fan-out gateway · Apache 2.0</span>
+    <span class="mono">ingest → plan → deliver</span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var nodes    = Array.prototype.slice.call(document.querySelectorAll(".node"));
+  var packet   = document.getElementById("packet");
+  var rail     = document.getElementById("rail");
+  var readout  = document.getElementById("readout");
+  var timers   = [];
+  var reduced  = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function clearRun() {
+    timers.forEach(clearTimeout);
+    timers = [];
+    nodes.forEach(function (n) { n.className = "node"; });
+    packet.style.opacity = "0";
+    packet.className = "packet mono";
+    readout.innerHTML = "";
+  }
+
+  function at(ms, fn) { timers.push(setTimeout(fn, reduced ? 0 : ms)); }
+
+  function say(tag, cls, text) {
+    var row = document.createElement("div");
+    row.className = "readout-line";
+    var t = document.createElement("span");
+    t.className = "tag " + cls;
+    t.textContent = tag;
+    var s = document.createElement("span");
+    s.textContent = text;
+    row.appendChild(t); row.appendChild(s);
+    readout.appendChild(row);
+    readout.scrollTop = readout.scrollHeight;
+  }
+
+  // Move the packet above node i, using live geometry so it survives resize.
+  function moveTo(i) {
+    var node = nodes[i];
+    var x = node.offsetLeft + (node.offsetWidth / 2) - (packet.offsetWidth / 2);
+    packet.style.opacity = "1";
+    packet.style.transform = "translateX(" + x + "px)";
+  }
+
+  function light(i, state) {
+    nodes.forEach(function (n, j) {
+      if (j < i) { n.className = "node done"; }
+    });
+    nodes[i].className = "node " + (state || "on");
+  }
+
+  // Each scenario is a list of [delay, stageIndex|null, tag, class, message].
+  var SCENARIOS = {
+    ok: [
+      [0,    0, "recv",  "sig",  "POST /hooks/whatsapp-prod — 192 bytes, X-Hub-Signature-256 present"],
+      [700,  1, "hmac",  "ok",   "hmac.Equal over the exact bytes → match"],
+      [1400, 2, "sql",   "ok",   "INSERT events … routing_keys={WABA_ONE} → id 25"],
+      [1800, 2, "http",  "ok",   "200 returned to Meta in 3.9 ms — fan-out has not started yet"],
+      [2500, 3, "plan",  "sig",  "2 subscriptions matched → deduped to 2 services"],
+      [2900, 3, "sql",   "ok",   "INSERT deliveries ×2, planned_at = now()"],
+      [3600, 4, "claim", "sig",  "FOR UPDATE SKIP LOCKED → worker-3 claims both"],
+      [4300, 5, "send",  "ok",   "orders-api → 200 in 12 ms · analytics → 200 in 9 ms"],
+      [4700, 5, "done",  "ok",   "2/2 delivered. Original signature still valid downstream."]
+    ],
+    bad: [
+      [0,    0, "recv",  "sig",  "POST /hooks/whatsapp-prod — body has one extra byte"],
+      [700,  1, "hmac",  "bad",  "digest mismatch — the signature covers exact octets"],
+      [1200, 1, "http",  "bad",  "401 returned. Body is NOT stored as a deliverable event."],
+      [1700, 1, "log",   "warn", "logged: slug + sha256(body). Never the body itself."]
+    ],
+    dup: [
+      [0,    0, "recv",  "sig",  "Meta did not see our 200 in time — same payload again"],
+      [700,  1, "hmac",  "ok",   "signature valid (identical bytes → identical digest)"],
+      [1400, 2, "sql",   "warn", "ON CONFLICT (listener_id, dedupe_key) DO NOTHING → 0 rows"],
+      [1900, 2, "http",  "ok",   "200 returned anyway — from Meta's view it was accepted"],
+      [2400, 2, "log",   "warn", "duplicate counted, not silent. No second delivery set."]
+    ],
+    fail: [
+      [0,    0, "recv",  "sig",  "POST /hooks/whatsapp-prod — valid batch"],
+      [600,  2, "sql",   "ok",   "event stored, 200 returned"],
+      [1300, 3, "plan",  "sig",  "1 service matched"],
+      [2000, 4, "send",  "bad",  "orders-api → 500 (attempt 1 of 6)"],
+      [2600, 4, "retry", "warn", "retry in 1.4 s — full jitter over [0, 2s)"],
+      [3300, 4, "send",  "bad",  "attempt 2 → 500 · attempt 3 → 500 · …"],
+      [4000, 4, "brk",   "bad",  "20 consecutive failures → service disabled by the breaker"],
+      [4600, 4, "hold",  "warn", "no further attempts. Re-enable is a deliberate operator action."]
+    ]
+  };
+
+  function run(name) {
+    clearRun();
+    var steps = SCENARIOS[name];
+    var terminal = (name === "bad");
+
+    steps.forEach(function (s, idx) {
+      at(s[0], function () {
+        var stage = s[1];
+        if (stage !== null) {
+          moveTo(stage);
+          var isLast = (idx === steps.length - 1);
+          light(stage, terminal && isLast ? "rejected" : "on");
+          if (terminal) { packet.className = "packet mono bad"; }
+        }
+        say(s[2], s[3], s[4]);
+      });
+    });
+
+    // Settle the board once the story finishes.
+    at(steps[steps.length - 1][0] + 900, function () {
+      if (name === "ok") { nodes.forEach(function (n) { n.className = "node done"; }); }
+      packet.style.opacity = "0.35";
+    });
+  }
+
+  document.getElementById("run-ok").addEventListener("click",   function () { run("ok"); });
+  document.getElementById("run-bad").addEventListener("click",  function () { run("bad"); });
+  document.getElementById("run-dup").addEventListener("click",  function () { run("dup"); });
+  document.getElementById("run-fail").addEventListener("click", function () { run("fail"); });
+
+  // ---- Retry ladder ----
+  var ladder = document.getElementById("ladder");
+  function fmt(ms) {
+    if (ms < 1000) { return Math.round(ms) + " ms"; }
+    if (ms < 60000) { return (ms / 1000).toFixed(1) + " s"; }
+    return (ms / 60000).toFixed(1) + " min";
+  }
+  function drawLadder() {
+    ladder.innerHTML = "";
+    var BASE = 2000, CAP = 3600000;
+    for (var attempt = 1; attempt <= 6; attempt++) {
+      var ceiling = Math.min(BASE * Math.pow(2, attempt - 1), CAP);
+      var actual  = Math.random() * ceiling;      // full jitter: [0, ceiling)
+      var row = document.createElement("div");
+      row.className = "rung";
+
+      var label = document.createElement("span");
+      label.textContent = "attempt " + attempt;
+
+      var track = document.createElement("span");
+      var bar = document.createElement("span");
+      bar.className = "bar";
+      bar.style.display = "block";
+      bar.style.width = Math.max(2, (actual / (BASE * 32)) * 100) + "%";
+      bar.style.animationDelay = (attempt * 60) + "ms";
+      track.appendChild(bar);
+
+      var who = document.createElement("span");
+      who.className = "who";
+      who.textContent = fmt(actual) + "  / ceiling " + fmt(ceiling);
+
+      row.appendChild(label); row.appendChild(track); row.appendChild(who);
+      ladder.appendChild(row);
+    }
+  }
+  document.getElementById("reroll").addEventListener("click", drawLadder);
+  drawLadder();
+
+  // Keep the packet aligned if the viewport changes mid-run.
+  window.addEventListener("resize", function () {
+    packet.style.opacity = "0";
+  });
+
+  // Autoplay the happy path once the board scrolls into view.
+  if (!reduced && "IntersectionObserver" in window) {
+    var seen = false;
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting && !seen) { seen = true; run("ok"); io.disconnect(); }
+      });
+    }, { threshold: 0.35 });
+    io.observe(rail);
+  }
+}());
+</script>

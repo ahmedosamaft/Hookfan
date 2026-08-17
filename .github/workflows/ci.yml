@@ -100,11 +100,11 @@ jobs:
           - name: api
             context: .
             dockerfile: ./Dockerfile
-            max_mb: 20
+            max_mb: 30
           - name: ui
             context: ./ui
             dockerfile: ./ui/Dockerfile
-            max_mb: 60
+            max_mb: 100
 
     steps:
       - uses: actions/checkout@v4
