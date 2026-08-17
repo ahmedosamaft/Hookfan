@@ -1,0 +1,271 @@
+name: Release
+
+# Publishes on version tags only, so every image in the registry corresponds
+# to a release. Pull requests build without pushing (see ci.yml), which keeps
+# a fork from ever publishing an image.
+on:
+  push:
+    tags:
+      - 'v*'
+  # Manual runs are useful for re-publishing a tag after a registry outage.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build and publish (e.g. v0.1.0-rc.1)'
+        required: true
+
+# No workflow-level env block for the image names: a top-level `env:` is
+# evaluated outside any job and therefore cannot read environment-scoped
+# secrets, which would silently leave the image name empty. The names are
+# derived inside the jobs that hold `environment: prod`.
+
+jobs:
+  # Nothing is published unless the suite passes against a real Postgres.
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: hookfan
+          POSTGRES_PASSWORD: hookfan
+          POSTGRES_DB: hookfan_test
+        ports:
+          - 5432:5432
+        # The job must not start querying before the server accepts
+        # connections.
+        options: >-
+          --health-cmd "pg_isready -U hookfan -d hookfan_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify formatting
+        run: |
+          unformatted="$(gofmt -l ./cmd ./internal)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt would reformat these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - run: go vet ./...
+
+      - name: Test
+        env:
+          TEST_DATABASE_URL: postgres://hookfan:hookfan@localhost:5432/hookfan_test?sslmode=disable
+        run: go test ./... -count=1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build the UI
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+
+  publish:
+    name: Publish ${{ matrix.name }}
+    needs: test
+    runs-on: ubuntu-latest
+    # Secrets resolve from this environment rather than the repository, and it
+    # is where a required-reviewer rule is configured — with one set, no image
+    # is pushed until a human approves the run.
+    #
+    # Environment secrets are still read as `secrets.NAME`; there is no
+    # `env.prod.secrets.NAME` context.
+    environment: prod
+    permissions:
+      contents: read
+    strategy:
+      # One registry failure should not abandon a half-published release; both
+      # images are attempted, and the job as a whole still fails.
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            context: .
+            dockerfile: ./Dockerfile
+          - name: ui
+            context: ./ui
+            dockerfile: ./ui/Dockerfile
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # Fail early and clearly: without these the login step's error is
+      # cryptic, and a fork running this workflow has neither.
+      - name: Check registry credentials
+        run: |
+          if [ -z "${{ secrets.DOCKERHUB_USERNAME }}" ] || [ -z "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+            echo "::error::DOCKERHUB_USERNAME and DOCKERHUB_TOKEN must be set on the 'prod' environment."
+            echo "::error::Create an access token at https://hub.docker.com/settings/security, then add both"
+            echo "::error::under Settings → Environments → prod → Environment secrets."
+            exit 1
+          fi
+
+      # QEMU emulates the non-native architecture for the multi-platform build.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Derive image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/hookfan-${{ matrix.name }}
+          # A prerelease (v0.1.0-rc.1) must not move :latest or the bare
+          # :0.1.0 tag — only a final release does.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+            type=raw,value=latest,enable=${{ !contains(github.ref, '-') }}
+          labels: |
+            org.opencontainers.image.title=hookfan-${{ matrix.name }}
+            org.opencontainers.image.description=Self-hosted webhook fan-out gateway (${{ matrix.name }})
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache layers in the registry so a re-run does not rebuild from
+          # scratch. mode=max also caches intermediate build stages.
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          provenance: false
+
+      - name: Summarise
+        run: |
+          {
+            echo "### hookfan-${{ matrix.name }} published"
+            echo
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo
+            echo "Digest: \`${{ steps.push.outputs.digest }}\`"
+            echo "Platforms: linux/amd64, linux/arm64"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Confirms the published images actually run, rather than assuming a
+  # successful push means a working image.
+  smoke-test:
+    name: Smoke test published images
+    needs: publish
+    runs-on: ubuntu-latest
+    # Also needed here: the image names are built from DOCKERHUB_USERNAME,
+    # which now lives in this environment rather than the repository.
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Resolve the version tag
+        id: version
+        run: |
+          ref="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "value=${ref#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Start Postgres
+        run: |
+          docker run -d --name pg --network host \
+            -e POSTGRES_USER=hookfan -e POSTGRES_PASSWORD=hookfan -e POSTGRES_DB=hookfan \
+            postgres:16-alpine
+          for _ in $(seq 1 30); do
+            docker exec pg pg_isready -U hookfan -d hookfan >/dev/null 2>&1 && break
+            sleep 1
+          done
+
+      - name: Run the published API image
+        run: |
+          docker run -d --name api --network host \
+            -e DATABASE_URL='postgres://hookfan:hookfan@localhost:5432/hookfan?sslmode=disable' \
+            -e ADMIN_TOKEN="$(openssl rand -base64 32)" \
+            -e SECRET_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
+            -e PORT=8081 \
+            "${{ secrets.DOCKERHUB_USERNAME }}/hookfan-api:${{ steps.version.outputs.value }}"
+
+          for _ in $(seq 1 30); do
+            curl -sf http://localhost:8081/healthz >/dev/null && break
+            sleep 1
+          done
+
+      - name: Assert the API is healthy and migrated
+        run: |
+          echo "healthz: $(curl -sf http://localhost:8081/healthz)"
+          # /readyz proves migrations ran and the database is reachable.
+          readyz="$(curl -sf http://localhost:8081/readyz)" || {
+            echo "::error::/readyz did not return success"
+            docker logs api
+            exit 1
+          }
+          echo "readyz: $readyz"
+          echo "$readyz" | grep -q '"database":"ok"' || {
+            echo "::error::database check failed"
+            docker logs api
+            exit 1
+          }
+
+      - name: Run the published UI image
+        run: |
+          docker run -d --name ui --network host \
+            -e API_BASE_URL=http://localhost:8081 \
+            "${{ secrets.DOCKERHUB_USERNAME }}/hookfan-ui:${{ steps.version.outputs.value }}"
+          for _ in $(seq 1 30); do
+            curl -sf http://localhost:8080/healthz >/dev/null && break
+            sleep 1
+          done
+
+      - name: Assert the UI serves and resolves its runtime config
+        run: |
+          curl -sf http://localhost:8080/ | grep -q '<div id="root">' || {
+            echo "::error::the UI did not serve index.html"
+            docker logs ui
+            exit 1
+          }
+          # config.js is generated at container start, not baked at build time.
+          config="$(curl -sf http://localhost:8080/config.js)"
+          echo "config.js: $config"
+          echo "$config" | grep -q 'http://localhost:8081' || {
+            echo "::error::config.js did not pick up API_BASE_URL"
+            exit 1
+          }
+          # A client-side route must fall back to index.html on refresh.
+          code="$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/events)"
+          [ "$code" = "200" ] || { echo "::error::SPA fallback returned $code"; exit 1; }
+
+      - name: Container logs on failure
+        if: failure()
+        run: |
+          echo "=== api ==="; docker logs api 2>&1 | tail -50
+          echo "=== ui ===";  docker logs ui  2>&1 | tail -50

@@ -1,0 +1,209 @@
+name: CI
+
+# Runs on every push and pull request. Images are built but never pushed —
+# publishing happens only on a version tag, in release.yml.
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# A new push to the same branch makes an in-flight run obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: hookfan
+          POSTGRES_PASSWORD: hookfan
+          POSTGRES_DB: hookfan_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hookfan -d hookfan_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify formatting
+        run: |
+          unformatted="$(gofmt -l ./cmd ./internal)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt would reformat these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - run: go vet ./...
+
+      - name: Verify go.mod is tidy
+        run: |
+          go mod tidy
+          if ! git diff --quiet go.mod go.sum; then
+            echo "::error::go.mod or go.sum is not tidy — run 'go mod tidy' and commit."
+            git diff go.mod go.sum
+            exit 1
+          fi
+
+      # The database-backed tests skip themselves without this, so the variable
+      # is what makes the run meaningful rather than merely green.
+      - name: Test
+        env:
+          TEST_DATABASE_URL: postgres://hookfan:hookfan@localhost:5432/hookfan_test?sslmode=disable
+        run: go test ./... -count=1 -race
+
+  ui:
+    name: UI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install
+        working-directory: ui
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: ui
+        run: npx tsc -b
+
+      - name: Build
+        working-directory: ui
+        run: npm run build
+
+  images:
+    name: Build images (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            context: .
+            dockerfile: ./Dockerfile
+            max_mb: 20
+          - name: ui
+            context: ./ui
+            dockerfile: ./ui/Dockerfile
+            max_mb: 60
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      # Single-platform and loaded locally so the size check below can inspect
+      # it. The multi-arch build happens at release time.
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          load: true
+          tags: hookfan-${{ matrix.name }}:ci
+          cache-from: type=gha,scope=ci-${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=ci-${{ matrix.name }}
+
+      # These images are deployed by hand on small hosts; a size regression is
+      # worth catching at review time rather than at pull time.
+      - name: Check image size
+        run: |
+          bytes="$(docker image inspect hookfan-${{ matrix.name }}:ci --format '{{.Size}}')"
+          mb=$(( bytes / 1000000 ))
+          echo "hookfan-${{ matrix.name }} is ${mb}MB (budget ${{ matrix.max_mb }}MB)"
+          if [ "$mb" -gt "${{ matrix.max_mb }}" ]; then
+            echo "::error::image is ${mb}MB, over the ${{ matrix.max_mb }}MB budget"
+            exit 1
+          fi
+          echo "hookfan-${{ matrix.name }}: ${mb}MB / ${{ matrix.max_mb }}MB" >> "$GITHUB_STEP_SUMMARY"
+
+  compose:
+    name: End-to-end (docker compose)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the stack
+        run: |
+          cp .env.example .env
+          {
+            echo "ADMIN_TOKEN=$(openssl rand -base64 32)"
+            echo "SECRET_ENCRYPTION_KEY=$(openssl rand -base64 32)"
+          } >> .env
+          docker compose up -d --build
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:8081/healthz >/dev/null && break
+            sleep 2
+          done
+
+      # Exercises the ingest path end to end: a real HMAC over the exact bytes,
+      # and a tampered copy that must be rejected.
+      - name: Verify ingest and signature handling
+        run: |
+          set -euo pipefail
+          TOKEN="$(grep '^ADMIN_TOKEN=' .env | cut -d= -f2-)"
+          SECRET='ci-app-secret'
+
+          curl -sf -X POST http://localhost:8081/api/listeners \
+            -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+            -d "{\"name\":\"CI\",\"slug\":\"ci\",\"provider\":\"meta\",
+                 \"secret\":\"$SECRET\",\"challenge_verify_token\":\"ci-verify\"}" >/dev/null
+
+          # The Meta GET handshake must echo hub.challenge verbatim.
+          got="$(curl -sf 'http://localhost:8081/hooks/ci?hub.mode=subscribe&hub.verify_token=ci-verify&hub.challenge=ci123')"
+          [ "$got" = "ci123" ] || { echo "::error::challenge echoed '$got', want ci123"; exit 1; }
+
+          body='{"object":"whatsapp_business_account","entry":[{"id":"CI_WABA","changes":[]}]}'
+          sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')"
+
+          code="$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8081/hooks/ci \
+            -H "X-Hub-Signature-256: sha256=$sig" -H 'Content-Type: application/json' -d "$body")"
+          [ "$code" = "200" ] || { echo "::error::signed webhook returned $code, want 200"; exit 1; }
+
+          # One added byte must invalidate the signature.
+          code="$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8081/hooks/ci \
+            -H "X-Hub-Signature-256: sha256=$sig" -H 'Content-Type: application/json' -d "$body ")"
+          [ "$code" = "401" ] || { echo "::error::tampered body returned $code, want 401"; exit 1; }
+
+          # The same body twice must yield one event, not two.
+          curl -s -o /dev/null -X POST http://localhost:8081/hooks/ci \
+            -H "X-Hub-Signature-256: sha256=$sig" -H 'Content-Type: application/json' -d "$body"
+          sleep 2
+          count="$(curl -sf -H "Authorization: Bearer $TOKEN" \
+            'http://localhost:8081/api/events?limit=50' \
+            | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["events"]))')"
+          [ "$count" = "1" ] || { echo "::error::stored $count events, want 1 after a redelivery"; exit 1; }
+
+          echo "ingest, challenge, tamper rejection, and dedupe all behaved"
+
+      - name: Verify the UI container
+        run: |
+          set -euo pipefail
+          curl -sf http://localhost:8080/ | grep -q '<div id="root">'
+          curl -sf http://localhost:8080/config.js | grep -q 'apiBaseUrl'
+          code="$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/events)"
+          [ "$code" = "200" ] || { echo "::error::SPA fallback returned $code"; exit 1; }
+          echo "UI serves, resolves its runtime config, and falls back for client routes"
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --tail 100
