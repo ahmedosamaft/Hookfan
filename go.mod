@@ -6,6 +6,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/ohler55/ojg v1.28.4
 	github.com/pressly/goose/v3 v3.27.3
+	golang.org/x/time v0.15.0
 )
 
 require (
@@ -17,5 +18,4 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
-	golang.org/x/time v0.15.0 // indirect
 )

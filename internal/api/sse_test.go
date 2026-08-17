@@ -75,6 +75,12 @@ func TestPublishNeverBlocksOnSlowSubscriber(t *testing.T) {
 		t.Errorf("buffered %d messages, want the %d-message buffer to be full",
 			len(slow), subscriberBuffer)
 	}
+	// Dropping must be counted rather than silent, or a UI quietly missing
+	// updates looks identical to a quiet system.
+	wantDropped := int64(subscriberBuffer*4 - subscriberBuffer)
+	if got := b.Dropped(); got != wantDropped {
+		t.Errorf("Dropped() = %d, want %d", got, wantDropped)
+	}
 }
 
 func TestUnsubscribeIsIdempotent(t *testing.T) {

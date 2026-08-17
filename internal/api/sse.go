@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -36,7 +37,9 @@ type Broker struct {
 	mu          sync.RWMutex
 	subscribers map[chan StreamMessage]struct{}
 	log         *slog.Logger
-	dropped     int64
+	// Atomic because Publish increments it under RLock, which several
+	// publishers hold at once — a plain ++ there is a read-modify-write race.
+	dropped atomic.Int64
 }
 
 func NewBroker(log *slog.Logger) *Broker {
@@ -75,10 +78,15 @@ func (b *Broker) Publish(kind string, data any) {
 		case ch <- msg:
 		default:
 			// Never block a publisher on a slow reader.
-			b.dropped++
+			b.dropped.Add(1)
 		}
 	}
 }
+
+// Dropped reports how many messages were discarded because a subscriber was
+// not keeping up. A steadily rising figure means the UI is missing live
+// updates, which a page refresh corrects.
+func (b *Broker) Dropped() int64 { return b.dropped.Load() }
 
 // Subscribers reports how many clients are connected.
 func (b *Broker) Subscribers() int {
