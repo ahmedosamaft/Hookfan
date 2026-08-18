@@ -110,6 +110,39 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
+      # metadata-action derives semver tags from github.ref, which on a
+      # workflow_dispatch run is the BRANCH (refs/heads/master) regardless of
+      # the tag typed into the input. That produced no version tag at all,
+      # while type=raw still fired — so a manual run published only :latest.
+      #
+      # Normalising the ref here keeps checkout, the image tags, and the smoke
+      # test all describing the same release.
+      - name: Normalise the release ref
+        id: ref
+        run: |
+          set -euo pipefail
+          input="${{ github.event.inputs.tag }}"
+          if [ -n "$input" ]; then
+            ref="refs/tags/${input#refs/tags/}"
+          else
+            ref="${{ github.ref }}"
+          fi
+
+          case "$ref" in
+            refs/tags/v*) ;;
+            *)
+              echo "::error::release must run from a v* tag; got '$ref'."
+              echo "::error::On a manual run, enter an existing tag such as v0.1.0-rc.1."
+              exit 1
+              ;;
+          esac
+
+          tag="${ref#refs/tags/}"          # v0.1.0-rc.1
+          echo "ref=$ref"     >> "$GITHUB_OUTPUT"
+          echo "tag=$tag"     >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "Publishing $tag (from $ref)"
+
       # Fail early and clearly: without these the login step's error is
       # cryptic, and a fork running this workflow has neither.
       - name: Check registry credentials
@@ -135,13 +168,19 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/hookfan-${{ matrix.name }}
-          # A prerelease (v0.1.0-rc.1) must not move :latest or the bare
-          # :0.1.0 tag — only a final release does.
+          # Every pattern carries an explicit value= from the normalised tag.
+          # Without it these read github.ref, which on a manual run is the
+          # branch — producing no version tag while :latest still fired.
+          #
+          # metadata-action already suppresses {{major}}.{{minor}} and
+          # {{major}} for a prerelease (it emits the full version instead), so
+          # v0.1.0-rc.1 yields exactly one tag: 0.1.0-rc.1.
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
-            type=raw,value=latest,enable=${{ !contains(github.ref, '-') }}
+            type=semver,pattern={{version}},value=${{ steps.ref.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.ref.outputs.tag }}
+            type=semver,pattern={{major}},value=${{ steps.ref.outputs.tag }},enable=${{ !startsWith(steps.ref.outputs.tag, 'v0.') }}
+            # :latest only for a final release — never a release candidate.
+            type=raw,value=latest,enable=${{ !contains(steps.ref.outputs.tag, '-') }}
           labels: |
             org.opencontainers.image.title=hookfan-${{ matrix.name }}
             org.opencontainers.image.description=Self-hosted webhook fan-out gateway (${{ matrix.name }})
@@ -221,11 +260,21 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
+      # Derived the same way as in publish, so the two can never disagree about
+      # which release is under test.
       - name: Resolve the version tag
         id: version
         run: |
-          ref="${{ github.event.inputs.tag || github.ref_name }}"
-          echo "value=${ref#v}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          input="${{ github.event.inputs.tag }}"
+          tag="${input:-${{ github.ref_name }}}"
+          tag="${tag#refs/tags/}"
+          case "$tag" in
+            v*) ;;
+            *) echo "::error::expected a v* tag, got '$tag'"; exit 1 ;;
+          esac
+          echo "value=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "Smoke testing ${tag#v}"
 
       # Log in before pulling: an anonymous pull is rate-limited per IP, and a
       # shared runner burns that budget quickly.
