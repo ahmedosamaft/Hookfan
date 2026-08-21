@@ -77,7 +77,7 @@ func newFixture(t *testing.T) *fixture {
 
 // post builds a signed POST unless sig is explicitly supplied.
 func (f *fixture) post(body string, sig *string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPost, "/hooks/"+testSlug, strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/hooks/"+testSlug, strings.NewReader(body))
 	req.SetPathValue("slug", testSlug)
 	req.Header.Set("Content-Type", "application/json")
 
@@ -186,7 +186,7 @@ func TestChallenge(t *testing.T) {
 				q.Set("hub.challenge", tt.verify)
 			}
 
-			req := httptest.NewRequest(http.MethodGet, "/hooks/"+testSlug+"?"+q.Encode(), nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/hooks/"+testSlug+"?"+q.Encode(), nil)
 			req.SetPathValue("slug", testSlug)
 			rec := httptest.NewRecorder()
 			f.handler.Challenge(rec, req)
@@ -212,7 +212,7 @@ func TestChallenge(t *testing.T) {
 func TestChallengeUnknownListener(t *testing.T) {
 	f := newFixture(t)
 	req := httptest.NewRequest(http.MethodGet,
-		"/hooks/nope?hub.mode=subscribe&hub.verify_token=x&hub.challenge=y", nil)
+		"/api/hooks/nope?hub.mode=subscribe&hub.verify_token=x&hub.challenge=y", nil)
 	req.SetPathValue("slug", "nope")
 	rec := httptest.NewRecorder()
 	f.handler.Challenge(rec, req)
@@ -325,7 +325,7 @@ func TestReceiveDistinctBodiesAreNotDeduped(t *testing.T) {
 
 func TestReceiveUnknownListener(t *testing.T) {
 	f := newFixture(t)
-	req := httptest.NewRequest(http.MethodPost, "/hooks/nope", strings.NewReader(metaBody))
+	req := httptest.NewRequest(http.MethodPost, "/api/hooks/nope", strings.NewReader(metaBody))
 	req.SetPathValue("slug", "nope")
 	rec := httptest.NewRecorder()
 	f.handler.Receive(rec, req)

@@ -12,7 +12,7 @@ import (
 	"github.com/aosama/hookfan/internal/store"
 )
 
-// PlannerLagThreshold is how far the planner may fall behind before /readyz
+// PlannerLagThreshold is how far the planner may fall behind before /api/readyz
 // reports the instance as not ready. Well above normal scheduling jitter, low
 // enough that a wedged planner is caught quickly.
 const PlannerLagThreshold = 60 * time.Second

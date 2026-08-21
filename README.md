@@ -102,7 +102,7 @@ cloudflared tunnel --url http://localhost:8081
 
 **3. Register it with Meta.** In the App Dashboard → **WhatsApp → Configuration → Edit** webhook:
 
-- **Callback URL**: `https://your-domain/hooks/whatsapp-prod`
+- **Callback URL**: `https://your-domain/api/hooks/whatsapp-prod`
 - **Verify token**: the value from step 1
 
 Meta immediately sends a `GET` with `hub.challenge`. hookfan echoes it back and Meta saves the configuration. If it fails, the listener's Setup panel in the UI has a `curl` command that reproduces the exact handshake.
@@ -175,16 +175,16 @@ Every variable is documented in [.env.example](.env.example). The ones that matt
 **Watch planner lag.** It is the single most important metric:
 
 ```bash
-curl localhost:8081/readyz
+curl localhost:8081/api/readyz
 ```
 
 ```json
 {"checks":{"database":"ok","planner":"ok","planner_lag_seconds":0},"status":"ok"}
 ```
 
-The planner turns received events into delivery sets. If it wedges, **ingest keeps returning 200 while nothing is forwarded** — the provider sees success and your services see silence. `/readyz` reports `degraded` past 60 seconds of lag. Alert on it.
+The planner turns received events into delivery sets. If it wedges, **ingest keeps returning 200 while nothing is forwarded** — the provider sees success and your services see silence. `/api/readyz` reports `degraded` past 60 seconds of lag. Alert on it.
 
-`/healthz` is a liveness probe and does not touch the database, so a database blip never restarts the container.
+`/api/healthz` is a liveness probe and does not touch the database, so a database blip never restarts the container.
 
 **Scaling.** The API is stateless apart from Postgres. Run several replicas behind a load balancer: migrations are guarded by an advisory lock, the delivery queue uses `FOR UPDATE SKIP LOCKED`, and the circuit breaker counter lives in the database precisely so it behaves the same across replicas.
 

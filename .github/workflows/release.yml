@@ -352,16 +352,16 @@ jobs:
             "${{ secrets.DOCKERHUB_USERNAME }}/hookfan-api:${{ steps.version.outputs.value }}"
 
           for _ in $(seq 1 30); do
-            curl -sf http://localhost:8081/healthz >/dev/null && break
+            curl -sf http://localhost:8081/api/healthz >/dev/null && break
             sleep 1
           done
 
       - name: Assert the API is healthy and migrated
         run: |
-          echo "healthz: $(curl -sf http://localhost:8081/healthz)"
-          # /readyz proves migrations ran and the database is reachable.
-          readyz="$(curl -sf http://localhost:8081/readyz)" || {
-            echo "::error::/readyz did not return success"
+          echo "healthz: $(curl -sf http://localhost:8081/api/healthz)"
+          # /api/readyz proves migrations ran and the database is reachable.
+          readyz="$(curl -sf http://localhost:8081/api/readyz)" || {
+            echo "::error::/api/readyz did not return success"
             docker logs api
             exit 1
           }

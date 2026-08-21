@@ -48,7 +48,7 @@ type Handler struct {
 	Stream Publisher
 }
 
-// Challenge handles GET /hooks/{slug}, the provider subscription handshake.
+// Challenge handles GET /api/hooks/{slug}, the provider subscription handshake.
 //
 // Meta calls this unauthenticated when the callback URL is first configured:
 // it must echo hub.challenge verbatim as text/plain when hub.verify_token
@@ -97,7 +97,7 @@ func (h *Handler) Challenge(w http.ResponseWriter, r *http.Request) {
 	h.Log.Info("challenge verified", "slug", slug)
 }
 
-// Receive handles POST /hooks/{slug}.
+// Receive handles POST /api/hooks/{slug}.
 func (h *Handler) Receive(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	slug := r.PathValue("slug")

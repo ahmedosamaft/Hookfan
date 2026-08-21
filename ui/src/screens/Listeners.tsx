@@ -90,7 +90,7 @@ export default function Listeners() {
                 </td>
                 <td className="px-3 py-1.5">
                   <div className="flex items-center gap-1.5">
-                    <Mono className="text-ink-300">/hooks/{l.slug}</Mono>
+                    <Mono className="text-ink-300">/api/hooks/{l.slug}</Mono>
                     <CopyButton value={callbackUrl(l.slug)} label="⧉" />
                   </div>
                 </td>
@@ -126,7 +126,7 @@ export default function Listeners() {
 
 function callbackUrl(slug: string): string {
   const base = apiBaseUrl() || window.location.origin
-  return `${base}/hooks/${slug}`
+  return `${base}/api/hooks/${slug}`
 }
 
 function CreateListener({ open, onClose, onCreated }: {

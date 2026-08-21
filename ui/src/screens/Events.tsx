@@ -118,7 +118,7 @@ export default function Events() {
             {!loading && events.length === 0 && (
               <tr><td colSpan={8}>
                 <EmptyState title="No events"
-                  hint="Post a webhook to /hooks/{slug} and it will appear here." />
+                  hint="Post a webhook to /api/hooks/{slug} and it will appear here." />
               </td></tr>
             )}
             {events.map(e => (

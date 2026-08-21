@@ -30,7 +30,7 @@ else
 fi
 auth=(-H "Authorization: Bearer ${ADMIN_TOKEN}")
 
-if ! curl -sf "${API}/healthz" >/dev/null; then
+if ! curl -sf "${API}/api/healthz" >/dev/null; then
     echo "error: the API is not responding at ${API}. Run 'make up' first." >&2
     exit 1
 fi
@@ -62,12 +62,12 @@ else
         -d "{\"name\":\"Demo WhatsApp\",\"slug\":\"${LISTENER_SLUG}\",\"provider\":\"meta\",
              \"secret\":\"${APP_SECRET}\",\"challenge_verify_token\":\"${VERIFY_TOKEN}\"}" \
         "${API}/api/listeners" | jqf "d['id']")"
-    ok "created listener #${listener_id} at ${API}/hooks/${LISTENER_SLUG}"
+    ok "created listener #${listener_id} at ${API}/api/hooks/${LISTENER_SLUG}"
 fi
 
 # ---------------------------------------------------------------------------
 step "Meta GET handshake"
-challenge="$(curl -s "${API}/hooks/${LISTENER_SLUG}?hub.mode=subscribe&hub.verify_token=${VERIFY_TOKEN}&hub.challenge=demo-challenge-123")"
+challenge="$(curl -s "${API}/api/hooks/${LISTENER_SLUG}?hub.mode=subscribe&hub.verify_token=${VERIFY_TOKEN}&hub.challenge=demo-challenge-123")"
 if [[ "${challenge}" == "demo-challenge-123" ]]; then
     ok "challenge echoed verbatim: ${challenge}"
 else
@@ -75,7 +75,7 @@ else
     exit 1
 fi
 wrong="$(curl -s -o /dev/null -w '%{http_code}' \
-    "${API}/hooks/${LISTENER_SLUG}?hub.mode=subscribe&hub.verify_token=WRONG&hub.challenge=x")"
+    "${API}/api/hooks/${LISTENER_SLUG}?hub.mode=subscribe&hub.verify_token=WRONG&hub.challenge=x")"
 ok "wrong verify token rejected with HTTP ${wrong}"
 
 # ---------------------------------------------------------------------------
@@ -131,13 +131,13 @@ body="{\"object\":\"whatsapp_business_account\",\"entry\":[{\"id\":\"DEMO_WABA_$
 signature="$(printf '%s' "${body}" | openssl dgst -sha256 -hmac "${APP_SECRET}" | awk '{print $2}')"
 
 info "signature: sha256=${signature:0:32}…"
-code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${API}/hooks/${LISTENER_SLUG}" \
+code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${API}/api/hooks/${LISTENER_SLUG}" \
     -H "X-Hub-Signature-256: sha256=${signature}" \
     -H 'Content-Type: application/json' -d "${body}")"
 ok "ingest returned HTTP ${code}"
 
 info "a tampered copy of the same body:"
-tampered="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${API}/hooks/${LISTENER_SLUG}" \
+tampered="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${API}/api/hooks/${LISTENER_SLUG}" \
     -H "X-Hub-Signature-256: sha256=${signature}" \
     -H 'Content-Type: application/json' -d "${body} ")"
 ok "rejected with HTTP ${tampered} (signature covers the exact bytes)"
@@ -180,7 +180,7 @@ info "UI:      http://localhost:${UI_PORT:-8080}"
 info "Events:  ${API}/api/events"
 info ""
 info "The receivers are still running. Post another webhook with:"
-info "  curl -X POST ${API}/hooks/${LISTENER_SLUG} \\"
+info "  curl -X POST ${API}/api/hooks/${LISTENER_SLUG} \\"
 info "    -H \"X-Hub-Signature-256: sha256=\$(printf '%s' \"\$BODY\" | openssl dgst -sha256 -hmac ${APP_SECRET} | awk '{print \$2}')\" \\"
 info "    -H 'Content-Type: application/json' -d \"\$BODY\""
 info ""

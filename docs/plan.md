@@ -40,7 +40,7 @@ A **planner** stage owns fan-out. `events.planned_at timestamptz NULL`; ingest w
 
 Doing this synchronously on the request goroutine would put a join plus N inserts in the latency path; a DB trigger would be invisible and untestable.
 
-**Planner lag is the primary health metric** — `max(now() - received_at) WHERE planned_at IS NULL`. If the planner wedges, ingest keeps returning 200 and nothing goes out. Exposed on `/readyz` and the dashboard.
+**Planner lag is the primary health metric** — `max(now() - received_at) WHERE planned_at IS NULL`. If the planner wedges, ingest keeps returning 200 and nothing goes out. Exposed on `/api/readyz` and the dashboard.
 
 ### Queue claim
 
@@ -128,7 +128,7 @@ Dependencies (each justified): `pgx/v5` (Postgres, specified), `ojg` (JSONPath, 
 
 Each phase ends with a working demo and a stop for review.
 
-**1 — Foundation.** ✅ *Done.* Go module, config with fail-fast validation (`SECRET_ENCRYPTION_KEY` must be 32 bytes base64, with a clear message), migrations + advisory lock, `/healthz` + `/readyz`, Dockerfile (distroless, <20MB), compose with db+api. *Demo: `docker compose up`, curl both health endpoints, show migrations applied.*
+**1 — Foundation.** ✅ *Done.* Go module, config with fail-fast validation (`SECRET_ENCRYPTION_KEY` must be 32 bytes base64, with a clear message), migrations + advisory lock, `/api/healthz` + `/api/readyz`, Dockerfile (distroless, <20MB), compose with db+api. *Demo: `docker compose up`, curl both health endpoints, show migrations applied.*
 
 **2 — Ingest.** ✅ *Done.* Listener CRUD, Meta GET challenge (constant-time compare, raw `hub.challenge` as text/plain), POST ingest with `MaxBytesReader` at 1MB, HMAC over exact raw bytes before any decode, routing key extraction via JSONPath, dedupe insert. *Demo: curl with a hand-computed HMAC — valid, tampered, wrong secret, missing header; multi-entry batch showing both keys in `routing_keys`; same body twice → one row.*
 

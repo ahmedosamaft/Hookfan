@@ -18,7 +18,7 @@ cp .env.example .env
 #   SECRET_ENCRYPTION_KEY=$(openssl rand -base64 32)
 
 make up
-curl localhost:8081/healthz
+curl localhost:8081/api/healthz
 ```
 
 `make toolchain` reports which Go it is using. A local install is considerably faster — the full test suite runs in about a second natively versus roughly twenty through the container.
@@ -64,7 +64,7 @@ Some parts of this codebase have non-obvious constraints. Changing them without 
 
 **Secrets are encrypted at rest** and must never appear in an API response or a log line. `link_token` is returned exactly twice in its life: at creation and at rotation. When logging a rejected webhook, log the body's hash — never the body, which may contain message content.
 
-**Planner lag is the health signal.** If you touch the planner, keep `/readyz` honest. A wedged planner means webhooks are accepted and silently never forwarded, and lag is the only thing that distinguishes that from a quiet day ([ADR 0006](docs/decisions/0006-planner-stage.md)).
+**Planner lag is the health signal.** If you touch the planner, keep `/api/readyz` honest. A wedged planner means webhooks are accepted and silently never forwarded, and lag is the only thing that distinguishes that from a quiet day ([ADR 0006](docs/decisions/0006-planner-stage.md)).
 
 ## Submitting
 

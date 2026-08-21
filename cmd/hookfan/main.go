@@ -130,10 +130,15 @@ func run() error {
 
 	mux := http.NewServeMux()
 
-	// --- Public: no auth. Providers call these unauthenticated. ---
+	// --- Public: no auth. Providers and probes call these unauthenticated. ---
+	//
+	// Registered directly on mux with exact patterns. ServeMux prefers the most
+	// specific match, so these win over the "/api/" subtree below — which is
+	// what keeps them outside RequireAuth. Meta calls the hooks endpoints with
+	// no credentials at all, and a probe that needed a token would be useless.
 	health := &api.Health{Store: st, Log: log}
-	mux.HandleFunc("GET /healthz", health.Healthz)
-	mux.HandleFunc("GET /readyz", health.Readyz)
+	mux.HandleFunc("GET /api/healthz", health.Healthz)
+	mux.HandleFunc("GET /api/readyz", health.Readyz)
 
 	guard := dispatch.NewSSRFGuard(cfg.AllowPrivate)
 
@@ -154,8 +159,8 @@ func run() error {
 	ingestHandler := &ingest.Handler{
 		Store: st, Cipher: cipher, Log: log, Notify: plan, Stream: broker,
 	}
-	mux.HandleFunc("GET /hooks/{slug}", ingestHandler.Challenge)
-	mux.HandleFunc("POST /hooks/{slug}", ingestHandler.Receive)
+	mux.HandleFunc("GET /api/hooks/{slug}", ingestHandler.Challenge)
+	mux.HandleFunc("POST /api/hooks/{slug}", ingestHandler.Receive)
 
 	// --- Admin: bearer token, CORS-restricted. ---
 	verifier := dispatch.NewVerifier(guard)

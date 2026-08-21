@@ -429,7 +429,7 @@
           <div class="node" data-i="0">
             <div class="n-i">01 · NET</div>
             <div class="n-t">Provider POST</div>
-            <div class="n-d">Meta sends the batch to <span class="k">/hooks/{slug}</span>.</div>
+            <div class="n-d">Meta sends the batch to <span class="k">/api/hooks/{slug}</span>.</div>
           </div>
           <div class="node" data-i="1">
             <div class="n-i">02 · INGEST</div>
@@ -910,7 +910,7 @@ event, duplicate, err := h.Store.InsertEvent(r.Context(), store.InsertEventParam
         <span class="sym-why">Nothing errored. A goroutine that stopped doing work isn't an exception.</span>
       </div>
       <div class="sym">
-        <span class="sym-who"><code>/healthz</code></span>
+        <span class="sym-who"><code>/api/healthz</code></span>
         <span class="sym-sees">returns <b class="ok-t">ok</b></span>
         <span class="sym-why">The process is alive and serving. That is all it claims.</span>
       </div>
@@ -955,7 +955,7 @@ event, duplicate, err := h.Store.InsertEvent(r.Context(), store.InsertEventParam
 
     <div class="code-wrap">
       <div class="code-cap"><span>this is already wired up — just point a monitor at it</span></div>
-<pre>$ curl -s localhost:8081/readyz
+<pre>$ curl -s localhost:8081/api/readyz
 
 <span class="cm"># healthy — note lag is 0 even with no traffic at all</span>
 {<span class="st">"status"</span>:<span class="st">"ok"</span>,
@@ -969,7 +969,7 @@ event, duplicate, err := h.Store.InsertEvent(r.Context(), store.InsertEventParam
     <div class="alert-grid">
       <div class="al">
         <span class="al-k">Probe</span>
-        <span class="al-v"><code>GET /readyz</code> — returns <b>503</b> past 60s of lag</span>
+        <span class="al-v"><code>GET /api/readyz</code> — returns <b>503</b> past 60s of lag</span>
       </div>
       <div class="al">
         <span class="al-k">Page when</span>
@@ -977,12 +977,12 @@ event, duplicate, err := h.Store.InsertEvent(r.Context(), store.InsertEventParam
       </div>
       <div class="al">
         <span class="al-k">Do not use</span>
-        <span class="al-v"><code>/healthz</code> — it deliberately ignores the planner, so a
+        <span class="al-v"><code>/api/healthz</code> — it deliberately ignores the planner, so a
         blip never restarts the container</span>
       </div>
       <div class="al">
         <span class="al-k">Careful with</span>
-        <span class="al-v">a k8s readiness probe on <code>/readyz</code> pulls the pod from
+        <span class="al-v">a k8s readiness probe on <code>/api/readyz</code> pulls the pod from
         the load balancer &mdash; which stops it accepting webhooks too. Alert on it;
         think twice before gating traffic on it.</span>
       </div>
@@ -1056,7 +1056,7 @@ event, duplicate, err := h.Store.InsertEvent(r.Context(), store.InsertEventParam
   // Each scenario is a list of [delay, stageIndex|null, tag, class, message].
   var SCENARIOS = {
     ok: [
-      [0,    0, "recv",  "sig",  "POST /hooks/whatsapp-prod — 192 bytes, X-Hub-Signature-256 present"],
+      [0,    0, "recv",  "sig",  "POST /api/hooks/whatsapp-prod — 192 bytes, X-Hub-Signature-256 present"],
       [700,  1, "hmac",  "ok",   "hmac.Equal over the exact bytes → match"],
       [1400, 2, "sql",   "ok",   "INSERT events … routing_keys={WABA_ONE} → id 25"],
       [1800, 2, "http",  "ok",   "200 returned to Meta in 3.9 ms — fan-out has not started yet"],
@@ -1067,7 +1067,7 @@ event, duplicate, err := h.Store.InsertEvent(r.Context(), store.InsertEventParam
       [4700, 5, "done",  "ok",   "2/2 delivered. Original signature still valid downstream."]
     ],
     bad: [
-      [0,    0, "recv",  "sig",  "POST /hooks/whatsapp-prod — body has one extra byte"],
+      [0,    0, "recv",  "sig",  "POST /api/hooks/whatsapp-prod — body has one extra byte"],
       [700,  1, "hmac",  "bad",  "digest mismatch — the signature covers exact octets"],
       [1200, 1, "http",  "bad",  "401 returned. Body is NOT stored as a deliverable event."],
       [1700, 1, "log",   "warn", "logged: slug + sha256(body). Never the body itself."]
@@ -1080,7 +1080,7 @@ event, duplicate, err := h.Store.InsertEvent(r.Context(), store.InsertEventParam
       [2400, 2, "log",   "warn", "duplicate counted, not silent. No second delivery set."]
     ],
     fail: [
-      [0,    0, "recv",  "sig",  "POST /hooks/whatsapp-prod — valid batch"],
+      [0,    0, "recv",  "sig",  "POST /api/hooks/whatsapp-prod — valid batch"],
       [600,  2, "sql",   "ok",   "event stored, 200 returned"],
       [1300, 3, "plan",  "sig",  "1 service matched"],
       [2000, 4, "send",  "bad",  "orders-api → 500 (attempt 1 of 6)"],
